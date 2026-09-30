@@ -1,0 +1,93 @@
+# Workflow simplificado para gerar um APK de teste (sem assinatura de loja),
+# a partir do fork com o patch de personagens já aplicado.
+#
+# Como usar:
+# 1. Salve este arquivo como .github/workflows/android-build-simple.yml
+#    dentro do seu fork/repositório do Readest.
+# 2. Vá em Settings > Secrets and variables > Actions e crie os segredos:
+#    NEXT_PUBLIC_POSTHOG_KEY, NEXT_PUBLIC_POSTHOG_HOST,
+#    NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY
+#    (pode deixar vazios/"" se não usar essas integrações - só não pode faltar a chave)
+# 3. Vá na aba "Actions" do seu repositório, escolha este workflow
+#    e clique em "Run workflow".
+# 4. Quando terminar (uns 40-60 min na primeira vez), baixe o APK
+#    no final da página de execução, em "Artifacts".
+
+name: Build Android APK (debug)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-android:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: initialize git submodules
+        run: git submodule update --init --recursive
+
+      - name: setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: setup node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: install NDK
+        run: sdkmanager --install "ndk;28.2.13676358"
+
+      - name: install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,armv7-linux-androideabi,i686-linux-android,x86_64-linux-android
+
+      - name: install frontend dependencies
+        run: pnpm install --frozen-lockfile=false
+
+      - name: setup vendors
+        run: pnpm --filter @readest/readest-app setup-vendors
+
+      - name: write env file
+        working-directory: apps/readest-app
+        run: |
+          echo "NEXT_PUBLIC_POSTHOG_KEY=${{ secrets.NEXT_PUBLIC_POSTHOG_KEY }}" >> .env.local
+          echo "NEXT_PUBLIC_POSTHOG_HOST=${{ secrets.NEXT_PUBLIC_POSTHOG_HOST }}" >> .env.local
+          echo "NEXT_PUBLIC_SUPABASE_URL=${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}" >> .env.local
+          echo "NEXT_PUBLIC_SUPABASE_ANON_KEY=${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}" >> .env.local
+
+      - name: init android project
+        working-directory: apps/readest-app
+        env:
+          NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/28.2.13676358
+        run: |
+          rm -rf src-tauri/gen/android
+          pnpm tauri android init
+
+      - name: build debug APK (unsigned, for local testing only)
+        working-directory: apps/readest-app
+        env:
+          NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/28.2.13676358
+        run: pnpm tauri android build --debug -t aarch64
+
+      - name: upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: readest-personagens-debug-apk
+          path: apps/readest-app/src-tauri/gen/android/app/build/outputs/apk/**/*.apk
+          retention-days: 14
