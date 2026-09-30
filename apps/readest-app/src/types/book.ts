@@ -625,6 +625,33 @@ export interface HardcoverBookLink {
   title: string;
 }
 
+export type CharacterBlockType = 'image' | 'title' | 'text';
+
+/** One element of a character sheet: an image, a heading or a paragraph. */
+export interface CharacterBlock {
+  id: string;
+  type: CharacterBlockType;
+  /** Heading / paragraph content (type 'title' | 'text'). */
+  text?: string;
+  /** Downscaled data URL (type 'image'). Empty while the slot is still unfilled. */
+  src?: string;
+}
+
+/**
+ * A character the reader registered by selecting its name in the text. Every
+ * occurrence of `name` (or one of `aliases`) gets a dot in the margin; tapping
+ * it opens the character sheet made of `blocks`.
+ */
+export interface BookCharacter {
+  id: string;
+  name: string;
+  aliases?: string[];
+  blocks: CharacterBlock[];
+  createdAt: number;
+  updatedAt: number;
+  deletedAt?: number | null;
+}
+
 export interface BookConfig {
   schemaVersion?: number;
   bookHash?: string;
@@ -633,6 +660,7 @@ export interface BookConfig {
   location?: string; // CFI of the current location
   xpointer?: string; // XPointer of the current location (for Koreader interoperability)
   booknotes?: BookNote[];
+  characters?: BookCharacter[];
   rsvpPosition?: { cfi: string; wordText: string };
   searchConfig?: Partial<BookSearchConfig>;
   viewSettings?: Partial<ViewSettings>;

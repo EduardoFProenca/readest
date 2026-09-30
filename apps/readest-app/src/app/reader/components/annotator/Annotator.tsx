@@ -21,6 +21,22 @@ import { useReaderStore } from '@/store/readerStore';
 import { useNotebookStore } from '@/store/notebookStore';
 import { useSidebarStore } from '@/store/sidebarStore';
 import { useCustomDictionaryStore } from '@/store/customDictionaryStore';
+import {
+  createCharacter,
+  deleteCharacter,
+  getBookCharacters,
+  upsertCharacter,
+} from '@/store/characterStore';
+import {
+  CHARACTER_DOT_COLOR,
+  characterIdFromValue,
+  drawCharacterDot,
+  expandCharacter,
+  expandCharactersInRenderedSections,
+  isCharacterValue,
+  removeCharacterOverlays,
+} from '../../utils/characterOverlays';
+import { BookCharacter } from '@/types/book';
 import { isSystemDictionaryEnabled } from '@/services/dictionaries/registry';
 import { invokeSystemDictionary } from '@/services/dictionaries/systemDictionary';
 import { useTranslation } from '@/hooks/useTranslation';
@@ -89,6 +105,7 @@ import AnnotationRangeEditor from './AnnotationRangeEditor';
 import PageTurnHint from './PageTurnHint';
 import SelectionRangeEditor from './SelectionRangeEditor';
 import AnnotationPopup from './AnnotationPopup';
+import CharacterDialog from '../character/CharacterDialog';
 import DictionaryPopup from './DictionaryPopup';
 import DictionarySheet from './DictionarySheet';
 import NoteEditorSheet from './NoteEditorSheet';
@@ -177,6 +194,10 @@ const Annotator: React.FC<{ bookKey: string; contentInsets: Insets }> = ({
   const [translationEpoch, setTranslationEpoch] = useState(0);
   const [showAnnotPopup, setShowAnnotPopup] = useState(false);
   const [showDictionaryPopup, setShowDictionaryPopup] = useState(false);
+  const [characterDialog, setCharacterDialog] = useState<{
+    character: BookCharacter;
+    isNew: boolean;
+  } | null>(null);
   const [showDeepLPopup, setShowDeepLPopup] = useState(false);
   const [showProofreadPopup, setShowProofreadPopup] = useState(false);
   const [trianglePosition, setTrianglePosition] = useState<Position>();
@@ -644,9 +665,19 @@ const Annotator: React.FC<{ bookKey: string; contentInsets: Insets }> = ({
         }
       }
     }
+
+    // 3. Character dots: one per occurrence of a registered name in this section.
+    for (const character of getBookCharacters(bookKey)) {
+      expandCharacter(view ?? null, character, sectionDoc, detail.index);
+    }
   };
 
   const onDrawAnnotation = (event: Event) => {
+    const drawDetail = (event as CustomEvent).detail;
+    if (isCharacterValue(drawDetail?.annotation?.value)) {
+      drawDetail.draw(drawCharacterDot, { color: CHARACTER_DOT_COLOR });
+      return;
+    }
     const viewSettings = getViewSettings(bookKey)!;
     drawAnnotationOverlay((event as CustomEvent).detail, {
       settings,
@@ -659,6 +690,12 @@ const Annotator: React.FC<{ bookKey: string; contentInsets: Insets }> = ({
   const onShowAnnotation = (event: Event) => {
     const detail = (event as CustomEvent).detail;
     const { value, index, range } = detail;
+    if (isCharacterValue(value)) {
+      const id = characterIdFromValue(value);
+      const character = getBookCharacters(bookKey).find((c) => c.id === id);
+      if (character) setCharacterDialog({ character, isNew: false });
+      return;
+    }
     const { booknotes = [] } = getConfig(bookKey)!;
     const isNote = value.startsWith(NOTE_PREFIX);
     const rawValue = isNote ? value.replace(NOTE_PREFIX, '') : value;
@@ -1235,6 +1272,7 @@ const Annotator: React.FC<{ bookKey: string; contentInsets: Insets }> = ({
         if (annotation.deletedAt) continue;
         if (view) expandAllRenderedSections(view, annotation);
       }
+      if (view) expandCharactersInRenderedSections(view, getBookCharacters(bookKey));
     } catch (e) {
       console.warn(e);
     }
@@ -1366,6 +1404,38 @@ const Annotator: React.FC<{ bookKey: string; contentInsets: Insets }> = ({
       timeout: 2000,
     });
     handleDismissPopupAndSelection();
+  };
+
+  const handleAddCharacter = () => {
+    if (!selection?.text) return;
+    const name = selection.text.replace(/\s+/g, ' ').trim().slice(0, 80);
+    if (!name) return;
+    const existing = getBookCharacters(bookKey).find(
+      (c) => c.name.toLowerCase() === name.toLowerCase(),
+    );
+    setCharacterDialog(
+      existing
+        ? { character: existing, isNew: false }
+        : { character: createCharacter(name), isNew: true },
+    );
+    handleDismissPopupAndSelection();
+  };
+
+  const handleSaveCharacter = async (character: BookCharacter) => {
+    const views = getViewsById(bookKey.split('-')[0]!);
+    const previous = getBookCharacters(bookKey).find((c) => c.id === character.id);
+    if (previous) views.forEach((v) => removeCharacterOverlays(v ?? null, previous));
+    await upsertCharacter(envConfig, bookKey, character);
+    const characters = getBookCharacters(bookKey);
+    views.forEach((v) => expandCharactersInRenderedSections(v ?? null, characters));
+    setCharacterDialog(null);
+  };
+
+  const handleDeleteCharacter = async (character: BookCharacter) => {
+    const views = getViewsById(bookKey.split('-')[0]!);
+    views.forEach((v) => removeCharacterOverlays(v ?? null, character));
+    await deleteCharacter(envConfig, bookKey, character.id);
+    setCharacterDialog(null);
   };
 
   const handleShare = () => {
@@ -2373,6 +2443,8 @@ const Annotator: React.FC<{ bookKey: string; contentInsets: Insets }> = ({
           onClick: handleAnnotate,
           disabled: popupSelectionNoCfi,
         };
+      case 'character':
+        return { tooltipText: _(label), Icon, onClick: handleAddCharacter };
       case 'search':
         return { tooltipText: _(label), Icon, onClick: handleSearch };
       case 'dictionary':
@@ -2595,6 +2667,16 @@ const Annotator: React.FC<{ bookKey: string; contentInsets: Insets }> = ({
           noteAutoTurnPoint={noteAutoTurnPoint}
           cancelAutoTurn={cancelAutoTurn}
           onAutoTurn={onAutoTurn}
+        />
+      )}
+      {characterDialog && (
+        <CharacterDialog
+          key={characterDialog.character.id}
+          character={characterDialog.character}
+          isNew={characterDialog.isNew}
+          onSave={handleSaveCharacter}
+          onDelete={handleDeleteCharacter}
+          onClose={() => setCharacterDialog(null)}
         />
       )}
       {showExportDialog && exportData && bookData.book && (

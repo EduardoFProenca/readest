@@ -2521,5 +2521,14 @@
   "Follows the theme color": "Segue a cor do tema",
   "Background Style": "Estilo de fundo",
   "Rows": "Linhas",
-  "Open Readest to show this bookshelf": "Abra o Readest para mostrar esta estante"
+  "Open Readest to show this bookshelf": "Abra o Readest para mostrar esta estante",
+  "Character": "Personagem",
+  "Add selection as a character": "Adicionar seleção como personagem",
+  "New Character": "Novo personagem",
+  "Other names (comma separated)": "Outros nomes (separados por vírgula)",
+  "Paste (Ctrl+V), drop or upload an image": "Cole (Ctrl+V), arraste ou envie uma imagem",
+  "Upload": "Enviar",
+  "Paste": "Colar",
+  "Image": "Imagem",
+  "Text": "Texto"
 }
