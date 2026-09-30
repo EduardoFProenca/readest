@@ -25,6 +25,9 @@ jobs:
   build-android:
     runs-on: ubuntu-latest
     timeout-minutes: 90
+    env:
+      ANDROID_HOME: /usr/local/lib/android/sdk
+      NDK_VERSION: 28.2.13676358
     steps:
       - uses: actions/checkout@v4
 
@@ -46,13 +49,17 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: setup Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: install SDK platform, build-tools and NDK
+      # A runner ubuntu-latest já vem com o Android SDK pré-instalado em
+      # $ANDROID_HOME. Em vez de usar a action android-actions/setup-android
+      # (que tenta instalar o pacote legado "tools", removido pelo Google e
+      # que causa falha), chamamos o sdkmanager já presente na máquina
+      # diretamente, só para aceitar as licenças e instalar o que falta.
+      - name: accept licenses and install SDK packages + NDK
         run: |
-          yes | sdkmanager --licenses > /dev/null || true
-          sdkmanager "platform-tools" "platforms;android-34" "build-tools;34.0.0" "ndk;28.2.13676358"
+          SDKMANAGER="$(find "$ANDROID_HOME/cmdline-tools" -name sdkmanager -type f | sort -V | tail -1)"
+          echo "using sdkmanager at $SDKMANAGER"
+          yes | "$SDKMANAGER" --licenses > /dev/null || true
+          "$SDKMANAGER" "platform-tools" "platforms;android-34" "build-tools;34.0.0" "ndk;$NDK_VERSION"
 
       - name: install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -76,7 +83,7 @@ jobs:
       - name: init android project
         working-directory: apps/readest-app
         env:
-          NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/28.2.13676358
+          NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/${{ env.NDK_VERSION }}
         run: |
           rm -rf src-tauri/gen/android
           pnpm tauri android init
@@ -84,7 +91,7 @@ jobs:
       - name: build debug APK (unsigned, for local testing only)
         working-directory: apps/readest-app
         env:
-          NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/28.2.13676358
+          NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/${{ env.NDK_VERSION }}
         run: pnpm tauri android build --debug -t aarch64
 
       - name: upload APK
