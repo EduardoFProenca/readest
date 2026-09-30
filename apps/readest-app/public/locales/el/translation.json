@@ -2295,7 +2295,6 @@
   "{{alias}} wants to send you {{count}} book(s)_other": "Ο/Η {{alias}} θέλει να σας στείλει {{count}} βιβλία",
   "Speech": "Ομιλία",
   "Skip Parenthetical Readings": "Παράλειψη αναγνώσεων σε παρενθέσεις",
-  "Do not speak kana or Han readings shown after Han text": "Να μην εκφωνούνται αναγνώσεις κάνα ή χαν μετά από κείμενο χαν",
   "Regex": "Regex",
   "Case sensitive": "Διάκριση πεζών-κεφαλαίων",
   "Only for TTS": "Μόνο για TTS",
@@ -2461,5 +2460,16 @@
   "Follows the theme color": "Ακολουθεί το χρώμα του θέματος",
   "Background Style": "Στυλ φόντου",
   "Rows": "Γραμμές",
-  "Open Readest to show this bookshelf": "Ανοίξτε το Readest για να εμφανιστεί αυτό το ράφι"
+  "Open Readest to show this bookshelf": "Ανοίξτε το Readest για να εμφανιστεί αυτό το ράφι",
+  "Turn on Books in Manage Sync to upload this book": "Ενεργοποιήστε τα «Βιβλία» στη «Διαχείριση συγχρονισμού» για να ανεβάσετε αυτό το βιβλίο",
+  "Shelf name": "Όνομα ραφιού",
+  "Hide Bookshelf Buttons": "Απόκρυψη κουμπιών ραφιού",
+  "Previous and Next in the library": "Προηγούμενο και Επόμενο στη βιβλιοθήκη",
+  "Reverse Mouse Wheel": "Αντιστροφή τροχού ποντικιού",
+  "Scroll up for the next page": "Κύλιση προς τα πάνω για την επόμενη σελίδα",
+  "Keep Text Selected After Lookup": "Διατήρηση επιλογής κειμένου μετά την αναζήτηση",
+  "Sentence around the highlight": "Πρόταση γύρω από την επισήμανση",
+  "Do not speak readings or Hanja glosses in parentheses after a word": "Να μην εκφωνούνται αναγνώσεις ή επεξηγήσεις hanja σε παρένθεση μετά από μια λέξη",
+  "Visible as {{name}}": "Ορατό ως {{name}}",
+  "Local Network": "Τοπικό δίκτυο"
 }

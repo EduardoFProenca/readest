@@ -85,6 +85,8 @@ export const useBrightnessGesture = (bookKey: string) => {
   const viewHeightRef = useRef(0);
   const startValueRef = useRef(DEFAULT_BRIGHTNESS);
   const levelRef = useRef(DEFAULT_BRIGHTNESS);
+  const gestureIdRef = useRef(0);
+  const readPendingRef = useRef(false);
   const rafIdRef = useRef<number | null>(null);
   const pendingValueRef = useRef<number | null>(null);
   const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -120,7 +122,7 @@ export const useBrightnessGesture = (bookKey: string) => {
   const flushBrightness = useCallback(() => {
     rafIdRef.current = null;
     if (pendingValueRef.current !== null) {
-      setScreenBrightness(pendingValueRef.current);
+      setScreenBrightness(pendingValueRef.current, latestRef.current.autoBrightness);
       pendingValueRef.current = null;
     }
   }, [setScreenBrightness]);
@@ -185,6 +187,18 @@ export const useBrightnessGesture = (bookKey: string) => {
         armedRef.current = isInLeftEdge(t.screenX, viewWidth);
         const applied = useDeviceControlStore.getState().lastScreenBrightness;
         startValueRef.current = applied ?? seedRef.current;
+        // In system mode the brightness can change outside the reader (Control
+        // Center, Home) without a visibilitychange, so re-read the device value
+        // and hold brightness writes until this gesture's reading lands (#6374).
+        const gestureId = ++gestureIdRef.current;
+        readPendingRef.current = armedRef.current && latestRef.current.autoBrightness;
+        if (readPendingRef.current) {
+          getScreenBrightness().then((b) => {
+            if (gestureIdRef.current !== gestureId) return;
+            readPendingRef.current = false;
+            if (b >= 0 && b <= 1) startValueRef.current = b;
+          });
+        }
       };
 
       const onTouchMove = (e: TouchEvent) => {
@@ -232,6 +246,7 @@ export const useBrightnessGesture = (bookKey: string) => {
         e.stopImmediatePropagation();
         const value = computeBrightness(startValueRef.current, dy, viewHeightRef.current);
         levelRef.current = value;
+        if (readPendingRef.current) return;
         scheduleBrightness(value);
         setOverlayVisible(true);
         setOverlayLevel(value);
@@ -253,7 +268,7 @@ export const useBrightnessGesture = (bookKey: string) => {
         setLayeredTurnTouchClaimed(bookKey, false);
         cancelRaf();
         const value = levelRef.current;
-        setScreenBrightness(value);
+        setScreenBrightness(value, latestRef.current.autoBrightness);
         seedRef.current = value;
         if (!latestRef.current.autoBrightness) {
           saveSysSettings(envConfig, 'screenBrightness', Math.round(value * 100));
@@ -271,7 +286,15 @@ export const useBrightnessGesture = (bookKey: string) => {
       doc.addEventListener('touchend', onTouchEnd, opts);
       doc.addEventListener('touchcancel', onTouchEnd, opts);
     },
-    [abortGesture, resetGesture, scheduleBrightness, cancelRaf, setScreenBrightness, envConfig],
+    [
+      abortGesture,
+      resetGesture,
+      scheduleBrightness,
+      cancelRaf,
+      setScreenBrightness,
+      getScreenBrightness,
+      envConfig,
+    ],
   );
 
   useEffect(() => {

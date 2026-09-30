@@ -257,6 +257,7 @@ pub struct SetScreenWakeLockRequest {
 #[serde(rename_all = "camelCase")]
 pub struct SetScreenBrightnessRequest {
     pub brightness: f64, // 0.0 to 1.0
+    pub persist: Option<bool>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -630,8 +631,10 @@ pub struct BookshelfWidgetCatalogLabels {
     pub rows: String,
     pub columns: String,
     pub show_titles: String,
+    pub show_shelf_name: String,
     pub cancel: String,
     pub save: String,
+    pub edit: String,
     pub open_app: String,
 }
 

@@ -2415,7 +2415,6 @@
   "{{alias}} wants to send you {{count}} book(s)_other": "{{alias}} chce wysłać Ci {{count}} książki",
   "Speech": "Mowa",
   "Skip Parenthetical Readings": "Pomijaj odczyty w nawiasach",
-  "Do not speak kana or Han readings shown after Han text": "Nie odczytuj zapisów kana ani han wyświetlanych po tekście han",
   "Regex": "Regex",
   "Case sensitive": "Uwzględniaj wielkość liter",
   "Only for TTS": "Tylko dla TTS",
@@ -2581,5 +2580,16 @@
   "Follows the theme color": "Używa koloru motywu",
   "Background Style": "Styl tła",
   "Rows": "Wiersze",
-  "Open Readest to show this bookshelf": "Otwórz Readest, aby wyświetlić tę półkę"
+  "Open Readest to show this bookshelf": "Otwórz Readest, aby wyświetlić tę półkę",
+  "Turn on Books in Manage Sync to upload this book": "Włącz „Książki” w „Zarządzaj synchronizacją”, aby przesłać tę książkę",
+  "Shelf name": "Nazwa półki",
+  "Hide Bookshelf Buttons": "Ukryj przyciski półki",
+  "Previous and Next in the library": "Poprzednia i Następna w bibliotece",
+  "Reverse Mouse Wheel": "Odwróć kółko myszy",
+  "Scroll up for the next page": "Przewiń w górę, aby przejść do następnej strony",
+  "Keep Text Selected After Lookup": "Zachowaj zaznaczenie tekstu po wyszukaniu",
+  "Sentence around the highlight": "Zdanie wokół zaznaczenia",
+  "Do not speak readings or Hanja glosses in parentheses after a word": "Nie odczytuj odczytań ani glos w hanja w nawiasach po słowie",
+  "Visible as {{name}}": "Widoczne jako {{name}}",
+  "Local Network": "Sieć lokalna"
 }

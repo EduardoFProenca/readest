@@ -2295,7 +2295,6 @@
   "{{alias}} wants to send you {{count}} book(s)_other": "{{alias}} {{count}} könyvet szeretne küldeni Önnek",
   "Speech": "Beszéd",
   "Skip Parenthetical Readings": "Zárójeles olvasatok kihagyása",
-  "Do not speak kana or Han readings shown after Han text": "A han szöveg után megjelenő kana- vagy han-olvasatokat ne olvassa fel",
   "Regex": "Regex",
   "Case sensitive": "Kis- és nagybetű megkülönböztetése",
   "Only for TTS": "Csak TTS esetén",
@@ -2461,5 +2460,16 @@
   "Follows the theme color": "Követi a téma színét",
   "Background Style": "Háttérstílus",
   "Rows": "Sorok",
-  "Open Readest to show this bookshelf": "Nyisd meg a Readestet a könyvespolc megjelenítéséhez"
+  "Open Readest to show this bookshelf": "Nyisd meg a Readestet a könyvespolc megjelenítéséhez",
+  "Turn on Books in Manage Sync to upload this book": "A könyv feltöltéséhez kapcsold be a „Könyvek” lehetőséget a „Szinkronizálás kezelése” menüben",
+  "Shelf name": "Polc neve",
+  "Hide Bookshelf Buttons": "Könyvespolc gombjainak elrejtése",
+  "Previous and Next in the library": "Előző és Következő a könyvtárban",
+  "Reverse Mouse Wheel": "Egérgörgő megfordítása",
+  "Scroll up for the next page": "Görgessen felfelé a következő oldalhoz",
+  "Keep Text Selected After Lookup": "Szöveg kijelölve marad keresés után",
+  "Sentence around the highlight": "A kiemelést tartalmazó mondat",
+  "Do not speak readings or Hanja glosses in parentheses after a word": "Ne olvassa fel a szó utáni zárójeles olvasatokat vagy handzsa glosszákat",
+  "Visible as {{name}}": "Látható ezen a néven: {{name}}",
+  "Local Network": "Helyi hálózat"
 }

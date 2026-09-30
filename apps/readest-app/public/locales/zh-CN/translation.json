@@ -2235,7 +2235,6 @@
   "{{alias}} wants to send you {{count}} book(s)_other": "{{alias}} 想要向您发送 {{count}} 本书",
   "Speech": "语音",
   "Skip Parenthetical Readings": "跳过括号内的读音",
-  "Do not speak kana or Han readings shown after Han text": "不朗读汉字文本后显示的假名或汉字读音",
   "Regex": "正则",
   "Case sensitive": "区分大小写",
   "Only for TTS": "仅用于TTS",
@@ -2401,5 +2400,16 @@
   "Follows the theme color": "跟随主题颜色",
   "Background Style": "背景样式",
   "Rows": "行数",
-  "Open Readest to show this bookshelf": "打开 Readest 以显示此书架"
+  "Open Readest to show this bookshelf": "打开 Readest 以显示此书架",
+  "Turn on Books in Manage Sync to upload this book": "请在“管理同步”中开启“书籍”以上传此书",
+  "Shelf name": "书架名称",
+  "Hide Bookshelf Buttons": "隐藏书架按钮",
+  "Previous and Next in the library": "书库中的上一页和下一页",
+  "Reverse Mouse Wheel": "反转鼠标滚轮",
+  "Scroll up for the next page": "向上滚动翻到下一页",
+  "Keep Text Selected After Lookup": "查词后保持文本选中",
+  "Sentence around the highlight": "高亮所在的句子",
+  "Do not speak readings or Hanja glosses in parentheses after a word": "不朗读词语后括号内的读音或汉字注释",
+  "Visible as {{name}}": "显示为 {{name}}",
+  "Local Network": "局域网"
 }

@@ -2355,7 +2355,6 @@
   "{{alias}} wants to send you {{count}} book(s)_other": "{{alias}} souhaite vous envoyer {{count}} livres",
   "Speech": "Lecture vocale",
   "Skip Parenthetical Readings": "Ignorer les lectures entre parenthèses",
-  "Do not speak kana or Han readings shown after Han text": "Ne pas prononcer les lectures en kana ou en han affichées après un texte en han",
   "Regex": "Regex",
   "Case sensitive": "Respecter la casse",
   "Only for TTS": "Uniquement pour TTS",
@@ -2521,5 +2520,16 @@
   "Follows the theme color": "Suit la couleur du thème",
   "Background Style": "Style de fond",
   "Rows": "Lignes",
-  "Open Readest to show this bookshelf": "Ouvrez Readest pour afficher cette étagère"
+  "Open Readest to show this bookshelf": "Ouvrez Readest pour afficher cette étagère",
+  "Turn on Books in Manage Sync to upload this book": "Activez « Livres » dans « Gérer la synchronisation » pour téléverser ce livre",
+  "Shelf name": "Nom de l'étagère",
+  "Hide Bookshelf Buttons": "Masquer les boutons de l’étagère",
+  "Previous and Next in the library": "Précédent et Suivant dans la bibliothèque",
+  "Reverse Mouse Wheel": "Inverser la molette de la souris",
+  "Scroll up for the next page": "Défiler vers le haut pour la page suivante",
+  "Keep Text Selected After Lookup": "Garder le texte sélectionné après la recherche",
+  "Sentence around the highlight": "Phrase autour du surlignage",
+  "Do not speak readings or Hanja glosses in parentheses after a word": "Ne pas lire les lectures ni les gloses en hanja entre parenthèses après un mot",
+  "Visible as {{name}}": "Visible en tant que {{name}}",
+  "Local Network": "Réseau local"
 }

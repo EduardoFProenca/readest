@@ -1,4 +1,5 @@
 import { invoke, Channel } from '@tauri-apps/api/core';
+import { getOSPlatform } from '@/utils/misc';
 
 export interface CopyURIRequest {
   uri: string;
@@ -95,6 +96,7 @@ interface GetScreenBrightnessResponse {
 
 interface SetScreenBrightnessRequest {
   brightness: number; // 0.0 to 1.0
+  persist?: boolean; // iOS: keep the value as the system brightness, don't restore it
 }
 
 interface SetScreenBrightnessResponse {
@@ -338,19 +340,31 @@ export interface CaptureWebviewRegionRequest {
 }
 
 /**
- * Capture a region of the running webview as compressed image bytes for
- * the mesh page-curl texture (#555): PNG on macOS, JPEG on iOS/Android
- * (phone-CPU PNG encoding took ~1.5s per turn). The snapshot is taken at
- * screen scale, capped at 2x CSS pixels on mobile. Rejects on platforms
- * without a native capture implementation (web, Windows/Linux so far) —
- * callers fall back to the CSS curl.
+ * Capture a region of the running webview for the mesh page-curl texture
+ * (#555): PNG bytes on macOS, JPEG bytes on iOS/Android (phone-CPU PNG
+ * encoding took ~1.5s per turn), taken at screen scale and capped at 2x CSS
+ * pixels on mobile. Windows and the Linux CEF runtime capture the whole view
+ * as JPEG (DevTools `Page.captureScreenshot`; its clip flashes the live view)
+ * and the region is cropped out here while decoding, so they resolve to a
+ * bitmap. Rejects where there is no native capture (web, the Linux WebKitGTK
+ * test runtime), and callers fall back to the renderer's own turns.
  */
 export async function captureWebviewRegion(
   request: CaptureWebviewRegionRequest,
-): Promise<ArrayBuffer> {
-  return await invoke<ArrayBuffer>('plugin:native-bridge|capture_webview_region', {
+): Promise<ArrayBuffer | ImageBitmap> {
+  const image = await invoke<ArrayBuffer>('plugin:native-bridge|capture_webview_region', {
     payload: request,
   });
+  const os = getOSPlatform();
+  if (os !== 'windows' && os !== 'linux') return image;
+  const scale = window.devicePixelRatio;
+  return await createImageBitmap(
+    new Blob([image]),
+    Math.round(request.x * scale),
+    Math.round(request.y * scale),
+    Math.round(request.width * scale),
+    Math.round(request.height * scale),
+  );
 }
 
 export interface CoverWebviewRegionResponse {
@@ -536,8 +550,11 @@ export interface BookshelfWidgetCatalog {
     rows: string;
     columns: string;
     showTitles: string;
+    showShelfName: string;
     cancel: string;
     save: string;
+    /** Opens the app to edit the selected shelf (readest://widget-edit-shelf/{id}). */
+    edit: string;
     /** Shown on a widget whose shelf hasn't been loaded by the app yet. */
     openApp: string;
   };

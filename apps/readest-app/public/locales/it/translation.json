@@ -2355,7 +2355,6 @@
   "{{alias}} wants to send you {{count}} book(s)_other": "{{alias}} vuole inviarti {{count}} libri",
   "Speech": "Voce",
   "Skip Parenthetical Readings": "Ignora letture tra parentesi",
-  "Do not speak kana or Han readings shown after Han text": "Non pronunciare le letture kana o han mostrate dopo il testo han",
   "Regex": "Regex",
   "Case sensitive": "Maiuscole/minuscole",
   "Only for TTS": "Solo per TTS",
@@ -2521,5 +2520,16 @@
   "Follows the theme color": "Segue il colore del tema",
   "Background Style": "Stile sfondo",
   "Rows": "Righe",
-  "Open Readest to show this bookshelf": "Apri Readest per mostrare questo scaffale"
+  "Open Readest to show this bookshelf": "Apri Readest per mostrare questo scaffale",
+  "Turn on Books in Manage Sync to upload this book": "Attiva «Libri» in «Gestisci sincronizzazione» per caricare questo libro",
+  "Shelf name": "Nome dello scaffale",
+  "Hide Bookshelf Buttons": "Nascondi i pulsanti dello scaffale",
+  "Previous and Next in the library": "Precedente e Successivo nella libreria",
+  "Reverse Mouse Wheel": "Inverti la rotella del mouse",
+  "Scroll up for the next page": "Scorri verso l’alto per la pagina successiva",
+  "Keep Text Selected After Lookup": "Mantieni il testo selezionato dopo la consultazione",
+  "Sentence around the highlight": "Frase intorno all'evidenziazione",
+  "Do not speak readings or Hanja glosses in parentheses after a word": "Non leggere le letture o le glosse in hanja tra parentesi dopo una parola",
+  "Visible as {{name}}": "Visibile come {{name}}",
+  "Local Network": "Rete locale"
 }

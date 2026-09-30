@@ -51,7 +51,7 @@ import { useHardcoverSync } from '../../hooks/useHardcoverSync';
 import { useNotionSync } from '../../hooks/useNotionSync';
 import { useTextSelector } from '../../hooks/useTextSelector';
 import { useSaveBooknoteNoteText } from '../../hooks/useSaveBooknoteNoteText';
-import { Point, Position, TextSelection } from '@/utils/sel';
+import { placeToolbar, Point, Position, TextSelection } from '@/utils/sel';
 import {
   getPopupPosition,
   getPosition,
@@ -202,6 +202,9 @@ const Annotator: React.FC<{ bookKey: string; contentInsets: Insets }> = ({
   const [showProofreadPopup, setShowProofreadPopup] = useState(false);
   const [trianglePosition, setTrianglePosition] = useState<Position>();
   const [annotPopupPosition, setAnnotPopupPosition] = useState<Position>();
+  // The side of the tapped word the footnote popup took, when one is open: a
+  // tap on a highlighted link opens both it and this toolbar (#6390).
+  const [footnotePopupDir, setFootnotePopupDir] = useState<Position['dir'] | null>(null);
   const [dictPopupPosition, setDictPopupPosition] = useState<Position>();
   const [translatorPopupPosition, setTranslatorPopupPosition] = useState<Position>();
   const [proofreadPopupPosition, setProofreadPopupPosition] = useState<Position>();
@@ -250,6 +253,16 @@ const Annotator: React.FC<{ bookKey: string; contentInsets: Insets }> = ({
   // selection-change effect opens the dictionary popup instead of the
   // annotation toolbar. Cleared as soon as it's consumed.
   const pendingWordLensDictRef = useRef(false);
+
+  // The lookup surfaces read the selection they were opened on, but it can be
+  // cleared without the dismiss that closes them: the instant highlight quick
+  // action clears it on a tap (#6419). Close them in the same render, before
+  // they can render without text.
+  if (!selection && (showDictionaryPopup || showDeepLPopup || showProofreadPopup)) {
+    setShowDictionaryPopup(false);
+    setShowDeepLPopup(false);
+    setShowProofreadPopup(false);
+  }
 
   const showingPopup =
     showAnnotPopup || showDictionaryPopup || showDeepLPopup || showProofreadPopup;
@@ -309,6 +322,29 @@ const Annotator: React.FC<{ bookKey: string; contentInsets: Insets }> = ({
           annotPopupMaxWidth,
         );
   const annotPopupHeight = useResponsiveSize(44);
+  // The style/color strip that rides on the toolbar's far side, with its gap.
+  const highlightOptionsBlock = useResponsiveSize(28 + 16);
+  // Set while the toolbar shares its side with the footnote popup because the
+  // other side has no room for it; the popup then opens beyond it (#6390).
+  const [toolbarBlock, setToolbarBlock] = useState<{ dir: Position['dir']; size: number } | null>(
+    null,
+  );
+
+  // Where to anchor the toolbar. A tap on a highlighted link opens the footnote
+  // popup at the same word, so the toolbar takes the side the popup left free
+  // when it fits there, and otherwise stays put and has the popup make room.
+  const getToolbarPosition = (sel: TextSelection, rect: DOMRect) => {
+    const size = annotPopupHeight + (highlightOptionsAvailable ? highlightOptionsBlock : 0);
+    const { position, shared } = placeToolbar(
+      (avoidDir) => getPosition(sel, rect, trianglePadding, viewSettings.vertical, avoidDir),
+      sel.popup ? null : footnotePopupDir,
+      rect,
+      size,
+      popupPadding,
+    );
+    setToolbarBlock(shared ? { dir: position.dir, size } : null);
+    return position;
+  };
   const androidSelectionHandlerHeight = 0;
 
   // Reposition popups on scroll without dismissing them
@@ -317,7 +353,7 @@ const Annotator: React.FC<{ bookKey: string; contentInsets: Insets }> = ({
     const gridFrame = document.querySelector(`#gridcell-${bookKey}`);
     if (!gridFrame) return;
     const rect = gridFrame.getBoundingClientRect();
-    const triangPos = getPosition(selection, rect, trianglePadding, viewSettings.vertical);
+    const triangPos = getToolbarPosition(selection, rect);
     const annotPopupPos = getPopupPosition(
       triangPos,
       rect,
@@ -357,7 +393,37 @@ const Annotator: React.FC<{ bookKey: string; contentInsets: Insets }> = ({
     setProofreadPopupPosition(proofreadPopupPos);
     setTrianglePosition(triangPos);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selection, bookKey, viewSettings.vertical, annotPopupWidth, annotPopupHeight]);
+  }, [
+    selection,
+    bookKey,
+    viewSettings.vertical,
+    annotPopupWidth,
+    annotPopupHeight,
+    footnotePopupDir,
+  ]);
+
+  useEffect(() => {
+    const onFootnotePopupAnchor = (event: CustomEvent) => {
+      const { key, dir } = event.detail as { key: string; dir: Position['dir'] | null };
+      if (key === bookKey) setFootnotePopupDir(dir);
+    };
+    eventDispatcher.on('footnote-popup-anchor', onFootnotePopupAnchor);
+    return () => eventDispatcher.off('footnote-popup-anchor', onFootnotePopupAnchor);
+  }, [bookKey]);
+
+  useEffect(() => {
+    eventDispatcher.dispatch('annotation-toolbar-block', {
+      key: bookKey,
+      block: showAnnotPopup ? toolbarBlock : null,
+    });
+  }, [bookKey, showAnnotPopup, toolbarBlock]);
+
+  // The footnote popup renders after the tap's selection has placed the
+  // toolbar, so move the toolbar off its side once it is known.
+  useEffect(() => {
+    repositionPopups();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [footnotePopupDir]);
 
   useEffect(() => {
     repositionPopups();
@@ -458,10 +524,12 @@ const Annotator: React.FC<{ bookKey: string; contentInsets: Insets }> = ({
 
   // Whether the currently shown selection came from the footnote popup, for
   // event handlers that only know the incoming event, not the selection state.
+  // The note editor spends that selection (dropSelectionForOverlay), so the
+  // cleared report it echoes back must not dismiss the editor (#6395).
   const selectionIsPopupRef = useRef(false);
   useEffect(() => {
-    selectionIsPopupRef.current = !!selection?.popup;
-  }, [selection]);
+    selectionIsPopupRef.current = !!selection?.popup && !noteEditorTarget;
+  }, [selection, noteEditorTarget]);
 
   // Selections made outside the book's section documents arrive via this
   // event: the footnote popup renders its own foliate view (or a host-document
@@ -482,6 +550,7 @@ const Annotator: React.FC<{ bookKey: string; contentInsets: Insets }> = ({
         annotated?: boolean;
         isNote?: boolean;
         rect?: TextSelection['rect'];
+        getPopupCfi?: TextSelection['getPopupCfi'];
       };
       if (detail.key !== bookKey) return;
       // Every event for this book advances the epoch so a handler still
@@ -493,10 +562,9 @@ const Annotator: React.FC<{ bookKey: string; contentInsets: Insets }> = ({
         return;
       }
       // A click on an overlay drawn in the popup: a highlight opens the
-      // toolbar in its annotated state (Delete Highlight + style options), a
-      // note bubble opens the note view — like the same clicks in the main
-      // view, minus the range-edit handles, which only operate on main view
-      // documents.
+      // toolbar in its annotated state (Delete Highlight + style options) with
+      // its range handles (#6390), a note bubble opens the note view — like
+      // the same clicks in the main view.
       if (detail.annotated && detail.cfi) {
         const { booknotes = [] } = getConfig(bookKey)!;
         const annotation = booknotes.find(
@@ -520,7 +588,7 @@ const Annotator: React.FC<{ bookKey: string; contentInsets: Insets }> = ({
             setShowAnnotationNotes(false);
             setAnnotationNotes([]);
           }
-          setEditingAnnotation(null);
+          setEditingAnnotation(!detail.isNote && annotation.style ? annotation : null);
           setSelection({
             key: bookKey,
             text,
@@ -532,6 +600,7 @@ const Annotator: React.FC<{ bookKey: string; contentInsets: Insets }> = ({
             page: annotation.page ?? getBookProgress(bookKey)?.page ?? 0,
             annotated: true,
             popup: true,
+            getPopupCfi: detail.getPopupCfi,
           });
           return;
         }
@@ -547,6 +616,7 @@ const Annotator: React.FC<{ bookKey: string; contentInsets: Insets }> = ({
         href: detail.href,
         page: getBookProgress(bookKey)?.page ?? 0,
         popup: true,
+        getPopupCfi: detail.getPopupCfi,
       });
     };
     eventDispatcher.on('footnote-selection', onFootnoteSelection);
@@ -722,7 +792,9 @@ const Annotator: React.FC<{ bookKey: string; contentInsets: Insets }> = ({
       cfi,
       index,
       range,
-      page: annotation.page || progress.page,
+      // This listener is registered once per view, so the `progress` it closes
+      // over is null until the first relocate: read the live progress instead.
+      page: annotation.page || getBookProgress(bookKey)?.page || 0,
     };
     if (isNote) {
       setShowAnnotationNotes(true);
@@ -1109,10 +1181,10 @@ const Annotator: React.FC<{ bookKey: string; contentInsets: Insets }> = ({
             handleDictionary();
             // Drop the selection for as long as the lookup is up, so iOS's
             // native handles and blue highlight — painted above web content —
-            // don't sit on top of the popup (#5585). It is handed back on
-            // dismiss (#6213): keeping it dropped for good left no way to
-            // highlight or copy the word, because re-selecting it with a quick
-            // action armed only opens the dictionary again.
+            // don't sit on top of the popup (#5585). With
+            // keepSelectionAfterLookup it is handed back on dismiss (#6213):
+            // re-selecting the word with a quick action armed only opens the
+            // dictionary again, so that is the only way to highlight or copy it.
             // Clear the flag before deselecting: the selectionchange this fires
             // would otherwise dismiss the popup we just opened.
             isTextSelected.current = false;
@@ -1158,7 +1230,7 @@ const Annotator: React.FC<{ bookKey: string; contentInsets: Insets }> = ({
       const gridFrame = document.querySelector(`#gridcell-${bookKey}`);
       if (!gridFrame) return;
       const rect = gridFrame.getBoundingClientRect();
-      const triangPos = getPosition(selection, rect, trianglePadding, viewSettings.vertical);
+      const triangPos = getToolbarPosition(selection, rect);
       const annotPopupPos = getPopupPosition(
         triangPos,
         rect,
@@ -2490,9 +2562,14 @@ const Annotator: React.FC<{ bookKey: string; contentInsets: Insets }> = ({
     // The instant dictionary is the one lookup that deselects as it opens, so
     // its dismiss has to put the range back before the check below — otherwise
     // the word it just defined can never be highlighted or copied (#6213).
+    // That is opt-in: by default the dismiss returns straight to reading (#6454).
     if (instantLookupDeselectedRef.current) {
       instantLookupDeselectedRef.current = false;
-      if (selection && restoreSelectionRange(selection.range)) {
+      if (
+        viewSettings.keepSelectionAfterLookup &&
+        selection &&
+        restoreSelectionRange(selection.range)
+      ) {
         isTextSelected.current = true;
         // `quickActionHandled` rides along with the selection from here on, so a
         // later republish of it (handleHighlight stamps `annotated`) can't be
@@ -2655,6 +2732,9 @@ const Annotator: React.FC<{ bookKey: string; contentInsets: Insets }> = ({
         )}
       {editingAnnotation && editingAnnotation.color && selection && !overlaySurfaceOpen && (
         <AnnotationRangeEditor
+          // The editor latches its annotation on mount; going straight from
+          // one highlight to another must not reuse it.
+          key={editingAnnotation.id}
           bookKey={bookKey}
           isVertical={viewSettings.vertical}
           annotation={editingAnnotation}

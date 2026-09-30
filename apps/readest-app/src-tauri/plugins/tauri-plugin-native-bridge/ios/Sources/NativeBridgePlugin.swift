@@ -68,6 +68,7 @@ class SetScreenWakeLockRequestArgs: Decodable {
 
 class SetScreenBrightnessRequestArgs: Decodable {
   let brightness: Float?
+  let persist: Bool?
 }
 
 class CopyUriToPathRequestArgs: Decodable {
@@ -670,7 +671,9 @@ class NativeBridgePlugin: Plugin {
   // leaving the system stuck at the app's level until the user nudges it
   // manually (issue #4885). We remember the value that was there before the
   // first override so we can hand it back whenever the app leaves the
-  // foreground; on return the system value stands and the override is dropped.
+  // foreground; on return the override is re-applied over the fresh system
+  // value. A `persist` write (System Screen Brightness mode) is not an override:
+  // it becomes the system brightness and is never handed back (#6374).
   private var appDesiredBrightness: CGFloat?
   private var systemBrightnessBeforeOverride: CGFloat?
 
@@ -760,10 +763,13 @@ class NativeBridgePlugin: Plugin {
   }
 
   @objc func appDidBecomeActive() {
-    // The system owns brightness across a background trip: drop our override and
-    // keep whatever brightness the system shows now.
-    appDesiredBrightness = nil
-    systemBrightnessBeforeOverride = nil
+    // Re-capture the system value (the user may have changed it in Control
+    // Center) and re-apply the override. Control Center only resigns active and
+    // never fires `visibilitychange`, so JS can't re-apply it here (#6374).
+    if let desired = appDesiredBrightness {
+      systemBrightnessBeforeOverride = UIScreen.main.brightness
+      UIScreen.main.brightness = desired
+    }
     if volumeKeyHandler != nil {
       activateVolumeKeyInterception()
     }
@@ -1333,6 +1339,10 @@ class NativeBridgePlugin: Plugin {
         // Android's BRIGHTNESS_OVERRIDE_NONE. Restore the pre-override brightness
         // so iOS resumes ambient auto-brightness.
         self.releaseBrightnessControl()
+      } else if args.persist == true {
+        self.appDesiredBrightness = nil
+        self.systemBrightnessBeforeOverride = nil
+        UIScreen.main.brightness = CGFloat(brightness)
       } else {
         if self.systemBrightnessBeforeOverride == nil {
           self.systemBrightnessBeforeOverride = UIScreen.main.brightness
@@ -1445,11 +1455,24 @@ class NativeBridgePlugin: Plugin {
     DispatchQueue.main.async {
       if let window = UIApplication.shared.windows.first {
         let insets = window.safeAreaInsets
+        // Rounded screen corners are not part of the safe area; report the
+        // bottom radius so the reader footer can keep clear of the curve. The
+        // window's own effective radius is 0, but a window-sized child with a
+        // container-concentric configuration resolves to the display radius.
+        var bottomCornerRadius: CGFloat = 0
+        if #available(iOS 26.0, *) {
+          let probe = UIView(frame: window.bounds)
+          probe.cornerConfiguration = .corners(radius: .containerConcentric())
+          window.addSubview(probe)
+          bottomCornerRadius = probe.effectiveRadius(corner: [.bottomLeft, .bottomRight])
+          probe.removeFromSuperview()
+        }
         invoke.resolve([
           "top": insets.top,
           "left": insets.left,
           "bottom": insets.bottom,
-          "right": insets.right
+          "right": insets.right,
+          "bottomCornerRadius": bottomCornerRadius
         ])
       } else {
         invoke.resolve([
