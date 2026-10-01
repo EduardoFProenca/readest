@@ -1,17 +1,5 @@
 # Workflow simplificado para gerar um APK de teste (sem assinatura de loja),
 # a partir do fork com o patch de personagens já aplicado.
-#
-# Como usar:
-# 1. Salve este arquivo como .github/workflows/android-build-simple.yml
-#    dentro do seu fork/repositório do Readest.
-# 2. Vá em Settings > Secrets and variables > Actions e crie os segredos:
-#    NEXT_PUBLIC_POSTHOG_KEY, NEXT_PUBLIC_POSTHOG_HOST,
-#    NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY
-#    (pode deixar vazios/"" se não usar essas integrações - só não pode faltar a chave)
-# 3. Vá na aba "Actions" do seu repositório, escolha este workflow
-#    e clique em "Run workflow".
-# 4. Quando terminar (uns 40-60 min na primeira vez), baixe o APK
-#    no final da página de execução, em "Artifacts".
 
 name: Build Android APK (debug)
 
@@ -28,6 +16,9 @@ jobs:
     env:
       ANDROID_HOME: /usr/local/lib/android/sdk
       NDK_VERSION: 28.2.13676358
+      ANDROID_NDK_HOME: /usr/local/lib/android/sdk/ndk/28.2.13676358
+      NDK_HOME: /usr/local/lib/android/sdk/ndk/28.2.13676358
+
     steps:
       - uses: actions/checkout@v4
 
@@ -49,11 +40,6 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      # A runner ubuntu-latest já vem com o Android SDK pré-instalado em
-      # $ANDROID_HOME. Em vez de usar a action android-actions/setup-android
-      # (que tenta instalar o pacote legado "tools", removido pelo Google e
-      # que causa falha), chamamos o sdkmanager já presente na máquina
-      # diretamente, só para aceitar as licenças e instalar o que falta.
       - name: accept licenses and install SDK packages + NDK
         run: |
           SDKMANAGER="$(find "$ANDROID_HOME/cmdline-tools" -name sdkmanager -type f | sort -V | tail -1)"
@@ -77,21 +63,24 @@ jobs:
         run: |
           echo "NEXT_PUBLIC_POSTHOG_KEY=${{ secrets.NEXT_PUBLIC_POSTHOG_KEY }}" >> .env.local
           echo "NEXT_PUBLIC_POSTHOG_HOST=${{ secrets.NEXT_PUBLIC_POSTHOG_HOST }}" >> .env.local
-          echo "NEXT_PUBLIC_SUPABASE_URL=${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}" >> .env.local
-          echo "NEXT_PUBLIC_SUPABASE_ANON_KEY=${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}" >> .env.local
+          echo "NEXT_PUBLIC_SUPABASE_URL=${{ secrets.NEXT_PUBLIC_SUPABASE_URL || 'https://placeholder.supabase.co' }}" >> .env.local
+          echo "NEXT_PUBLIC_SUPABASE_ANON_KEY=${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'placeholder' }}" >> .env.local
 
       - name: init android project
         working-directory: apps/readest-app
-        env:
-          NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/${{ env.NDK_VERSION }}
         run: |
           rm -rf src-tauri/gen/android
           pnpm tauri android init
+          
+          # Garante permissão de execução no gradlew
+          chmod +x src-tauri/gen/android/gradlew
 
-      # Pula o "tsc" do build do Next.js: há um teste no repositório
-      # (fixed-layout-scroll-page-overlap.test.ts) que espera uma função do
-      # submódulo foliate-js que a versão baixada aqui não exporta. Isso não
-      # afeta o app em si, só a checagem de tipos, então ignoramos por ora.
+          # Injeta a regra para resolver a ambiguidade dos sabores de build (foss vs googleplay)
+          GRADLE_FILE="src-tauri/gen/android/app/build.gradle.kts"
+          if [ -f "$GRADLE_FILE" ]; then
+            sed -i '/defaultConfig {/a \        missingDimensionStrategy("store", "foss")' "$GRADLE_FILE"
+          fi
+
       - name: patch next.config to skip type checking for this build
         working-directory: apps/readest-app
         run: |
@@ -100,8 +89,6 @@ jobs:
 
       - name: build debug APK (unsigned, for local testing only)
         working-directory: apps/readest-app
-        env:
-          NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/${{ env.NDK_VERSION }}
         run: pnpm tauri android build --debug -t aarch64
 
       - name: upload APK
