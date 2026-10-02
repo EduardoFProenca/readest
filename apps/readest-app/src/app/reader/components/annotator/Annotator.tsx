@@ -306,9 +306,10 @@ const Annotator: React.FC<{ bookKey: string; contentInsets: Insets }> = ({
     !!selection?.text &&
     selection.text.trim().length > 0;
   const globalToggleActive = !!currentAnnotation?.global;
-  const annotPopupMaxWidth = Math.min(useResponsiveSize(300), maxWidth);
+ const annotPopupMaxWidth = Math.min(useResponsiveSize(300), maxWidth);
   const annotPopupToolSize = useResponsiveSize(44);
   const toolbarToolTypes = getToolbarToolTypes(viewSettings.annotationToolbarItems, canShare);
+  const highlightOptionsGap = toolbarToolTypes.length <= 4 ? 4 : 8; 
   const highlightOptionsAvailable = shouldShowHighlightOptions(toolbarToolTypes, selection ?? null);
   const annotPopupWidth = highlightOptionsAvailable
     ? annotPopupMaxWidth
