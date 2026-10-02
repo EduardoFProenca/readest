@@ -1,17 +1,28 @@
 import clsx from 'clsx';
 import React, { useRef, useState } from 'react';
-import { LuArrowDown, LuArrowUp, LuClipboardPaste, LuImagePlus, LuTrash2 } from 'react-icons/lu';
+import {
+  LuArrowDown,
+  LuArrowUp,
+  LuClipboardPaste,
+  LuImagePlus,
+  LuPlus,
+  LuTrash2,
+  LuX,
+} from 'react-icons/lu';
 import Dialog from '@/components/Dialog';
 import { useTranslation } from '@/hooks/useTranslation';
-import { BookCharacter, CharacterBlock, CharacterBlockType } from '@/types/book';
+import { useEnv } from '@/context/EnvContext';
+import { BookCharacter, CharacterBlock, CharacterBlockType, CharacterTag } from '@/types/book';
 import { uniqueId } from '@/utils/misc';
+import { getCharacterTags, upsertCharacterTag } from '@/store/characterTagsStore';
 
 const MAX_IMAGE_SIZE = 800;
+const MAX_AVATAR_SIZE = 256;
 
 /** Downscale to keep the book config small; flatten transparency onto white. */
-async function imageToDataUrl(file: Blob): Promise<string> {
+async function imageToDataUrl(file: Blob, maxSize: number): Promise<string> {
   const bitmap = await createImageBitmap(file);
-  const scale = Math.min(1, MAX_IMAGE_SIZE / Math.max(bitmap.width, bitmap.height));
+  const scale = Math.min(1, maxSize / Math.max(bitmap.width, bitmap.height));
   const canvas = document.createElement('canvas');
   canvas.width = Math.max(1, Math.round(bitmap.width * scale));
   canvas.height = Math.max(1, Math.round(bitmap.height * scale));
@@ -25,6 +36,18 @@ async function imageToDataUrl(file: Blob): Promise<string> {
 
 const imagesFrom = (files: FileList | File[] | undefined | null): File[] =>
   Array.from(files ?? []).filter((f) => f.type.startsWith('image/'));
+
+// Fixed swatches so character dots stay visually distinct from one another.
+export const CHARACTER_COLOR_SWATCHES = [
+  '#f97316', // orange (default)
+  '#ef4444', // red
+  '#eab308', // yellow
+  '#22c55e', // green
+  '#06b6d4', // cyan
+  '#3b82f6', // blue
+  '#8b5cf6', // violet
+  '#ec4899', // pink
+];
 
 interface CharacterDialogProps {
   character: BookCharacter;
@@ -42,10 +65,17 @@ const CharacterDialog: React.FC<CharacterDialogProps> = ({
   onClose,
 }) => {
   const _ = useTranslation();
+  const { envConfig } = useEnv();
   const [name, setName] = useState(character.name);
   const [aliases, setAliases] = useState((character.aliases ?? []).join(', '));
+  const [color, setColor] = useState(character.color ?? CHARACTER_COLOR_SWATCHES[0]!);
+  const [avatarSrc, setAvatarSrc] = useState(character.avatarSrc ?? '');
   const [blocks, setBlocks] = useState<CharacterBlock[]>(character.blocks);
+  const [tagIds, setTagIds] = useState<string[]>(character.tagIds ?? []);
+  const [allTags, setAllTags] = useState<CharacterTag[]>(() => getCharacterTags());
+  const [newTagName, setNewTagName] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const avatarInputRef = useRef<HTMLInputElement>(null);
   // Which image slot the file picker was opened for (null = append a new one).
   const pickerTarget = useRef<string | null>(null);
 
@@ -53,7 +83,7 @@ const CharacterDialog: React.FC<CharacterDialogProps> = ({
     setBlocks((prev) => prev.map((b) => (b.id === id ? { ...b, ...patch } : b)));
 
   const addBlock = (type: CharacterBlockType) =>
-    setBlocks((prev) => [...prev, { id: uniqueId(), type, text: '', src: '' }]);
+    setBlocks((prev) => [...prev, { id: uniqueId(), type, text: '', heading: '', src: '' }]);
 
   const moveBlock = (id: string, delta: -1 | 1) =>
     setBlocks((prev) => {
@@ -74,7 +104,7 @@ const CharacterDialog: React.FC<CharacterDialogProps> = ({
     const urls: string[] = [];
     for (const file of files) {
       try {
-        urls.push(await imageToDataUrl(file));
+        urls.push(await imageToDataUrl(file, MAX_IMAGE_SIZE));
       } catch (err) {
         console.warn('Failed to read image', err);
       }
@@ -95,6 +125,16 @@ const CharacterDialog: React.FC<CharacterDialogProps> = ({
     });
   };
 
+  const insertAvatar = async (files: File[]) => {
+    const [file] = imagesFrom(files);
+    if (!file) return;
+    try {
+      setAvatarSrc(await imageToDataUrl(file, MAX_AVATAR_SIZE));
+    } catch (err) {
+      console.warn('Failed to read avatar image', err);
+    }
+  };
+
   const handlePaste = (e: React.ClipboardEvent) => {
     const files = imagesFrom(e.clipboardData.files);
     if (!files.length) return; // plain text paste keeps its default behavior
@@ -102,7 +142,7 @@ const CharacterDialog: React.FC<CharacterDialogProps> = ({
     void insertImages(files);
   };
 
-  const handlePasteButton = async (targetId?: string) => {
+  const readClipboardImages = async (): Promise<File[]> => {
     try {
       const items = await navigator.clipboard.read();
       const files: File[] = [];
@@ -110,15 +150,34 @@ const CharacterDialog: React.FC<CharacterDialogProps> = ({
         const type = item.types.find((t) => t.startsWith('image/'));
         if (type) files.push(new File([await item.getType(type)], 'pasted', { type }));
       }
-      await insertImages(files, targetId);
+      return files;
     } catch (err) {
       console.warn('Clipboard image read failed', err);
+      return [];
     }
   };
+
+  const handlePasteButton = async (targetId?: string) =>
+    insertImages(await readClipboardImages(), targetId);
+  const handlePasteAvatarButton = async () => insertAvatar(await readClipboardImages());
 
   const openPicker = (targetId: string | null) => {
     pickerTarget.current = targetId;
     fileInputRef.current?.click();
+  };
+
+  const toggleTag = (tagId: string) =>
+    setTagIds((prev) =>
+      prev.includes(tagId) ? prev.filter((t) => t !== tagId) : [...prev, tagId],
+    );
+
+  const handleCreateTag = async () => {
+    const name = newTagName.trim();
+    if (!name) return;
+    const tag = await upsertCharacterTag(envConfig, { name });
+    setAllTags((prev) => [...prev, tag]);
+    setTagIds((prev) => [...prev, tag.id]);
+    setNewTagName('');
   };
 
   const handleSave = () => {
@@ -131,6 +190,9 @@ const CharacterDialog: React.FC<CharacterDialogProps> = ({
         .split(',')
         .map((a) => a.trim())
         .filter(Boolean),
+      color,
+      avatarSrc: avatarSrc || undefined,
+      tagIds,
       // Drop slots the user never filled.
       blocks: blocks.filter((b) => (b.type === 'image' ? !!b.src : !!b.text?.trim())),
     });
@@ -149,6 +211,66 @@ const CharacterDialog: React.FC<CharacterDialogProps> = ({
       useOverlayScroll
     >
       <div className='flex flex-col gap-4 pb-6 pt-2' onPaste={handlePaste}>
+        <div className='flex items-center gap-4'>
+          <div
+            className='group relative shrink-0 cursor-pointer'
+            onClick={() => avatarInputRef.current?.click()}
+            onDragOver={(e) => e.preventDefault()}
+            onDrop={(e) => {
+              e.preventDefault();
+              void insertAvatar(imagesFrom(e.dataTransfer.files));
+            }}
+          >
+            {avatarSrc ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={avatarSrc}
+                alt={name}
+                className='border-base-300 h-16 w-16 rounded-full border object-cover'
+              />
+            ) : (
+              <div className='bg-base-200 text-base-content/50 flex h-16 w-16 items-center justify-center rounded-full border border-dashed text-xs'>
+                {_('Photo')}
+              </div>
+            )}
+            {avatarSrc && (
+              <button
+                className='btn btn-circle btn-xs absolute -right-1 -top-1'
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setAvatarSrc('');
+                }}
+              >
+                <LuX size={12} />
+              </button>
+            )}
+          </div>
+          <div className='flex flex-col gap-2'>
+            <div className='flex gap-2'>
+              <button className='btn btn-xs' onClick={() => avatarInputRef.current?.click()}>
+                <LuImagePlus /> {_('Upload')}
+              </button>
+              <button className='btn btn-xs' onClick={handlePasteAvatarButton}>
+                <LuClipboardPaste /> {_('Paste')}
+              </button>
+            </div>
+            <div className='flex items-center gap-1.5'>
+              {CHARACTER_COLOR_SWATCHES.map((swatch) => (
+                <button
+                  key={swatch}
+                  aria-label={swatch}
+                  onClick={() => setColor(swatch)}
+                  className={clsx(
+                    'h-5 w-5 rounded-full border-2',
+                    color === swatch ? 'border-base-content' : 'border-transparent',
+                  )}
+                  style={{ backgroundColor: swatch }}
+                />
+              ))}
+            </div>
+          </div>
+        </div>
+
         <label className='form-control w-full'>
           <span className='label-text mb-1'>{_('Name')}</span>
           <input
@@ -165,6 +287,39 @@ const CharacterDialog: React.FC<CharacterDialogProps> = ({
             onChange={(e) => setAliases(e.target.value)}
           />
         </label>
+
+        <div className='flex flex-col gap-1.5'>
+          <span className='label-text'>{_('Tags')}</span>
+          <div className='flex flex-wrap items-center gap-1.5'>
+            {allTags.map((tag) => (
+              <button
+                key={tag.id}
+                onClick={() => toggleTag(tag.id)}
+                className={clsx(
+                  'badge cursor-pointer',
+                  tagIds.includes(tag.id) ? 'badge-primary' : 'badge-outline',
+                )}
+              >
+                {tag.name}
+              </button>
+            ))}
+            <input
+              className='input input-bordered input-xs w-28'
+              placeholder={_('New tag')}
+              value={newTagName}
+              onChange={(e) => setNewTagName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  void handleCreateTag();
+                }
+              }}
+            />
+            <button className={iconBtn} onClick={handleCreateTag}>
+              <LuPlus />
+            </button>
+          </div>
+        </div>
 
         {blocks.map((block, i) => (
           <div key={block.id} className='border-base-300 rounded-lg border p-3'>
@@ -196,21 +351,34 @@ const CharacterDialog: React.FC<CharacterDialogProps> = ({
                 )}
               </div>
             )}
-            {block.type === 'title' && (
-              <input
-                className='input input-bordered w-full text-lg font-semibold'
-                placeholder={_('Title')}
-                value={block.text ?? ''}
-                onChange={(e) => updateBlock(block.id, { text: e.target.value })}
-              />
-            )}
             {block.type === 'text' && (
-              <textarea
-                className='textarea textarea-bordered min-h-24 w-full'
-                placeholder={_('Description')}
-                value={block.text ?? ''}
-                onChange={(e) => updateBlock(block.id, { text: e.target.value })}
-              />
+              <div className='flex flex-col gap-1.5'>
+                <input
+                  className='input input-bordered input-sm w-full font-semibold'
+                  placeholder={_('Heading (optional)')}
+                  value={block.heading ?? ''}
+                  onChange={(e) => updateBlock(block.id, { heading: e.target.value })}
+                />
+                <textarea
+                  className='textarea textarea-bordered min-h-24 w-full'
+                  placeholder={_('Description')}
+                  value={block.text ?? ''}
+                  onChange={(e) => updateBlock(block.id, { text: e.target.value })}
+                />
+              </div>
+            )}
+            {block.type === 'quote' && (
+              <div className='flex flex-col gap-1.5'>
+                <span className='text-base-content/60 text-xs uppercase tracking-wide'>
+                  {_('Quote')}
+                </span>
+                <textarea
+                  className='textarea textarea-bordered italic min-h-16 w-full'
+                  placeholder={_('What the character says...')}
+                  value={block.text ?? ''}
+                  onChange={(e) => updateBlock(block.id, { text: e.target.value })}
+                />
+              </div>
             )}
             <div className='mt-2 flex justify-end gap-1'>
               {block.type === 'image' && block.src && (
@@ -244,9 +412,6 @@ const CharacterDialog: React.FC<CharacterDialogProps> = ({
           <button className='btn btn-sm' onClick={() => addBlock('image')}>
             {_('Image')}
           </button>
-          <button className='btn btn-sm' onClick={() => addBlock('title')}>
-            {_('Title')}
-          </button>
           <button className='btn btn-sm' onClick={() => addBlock('text')}>
             {_('Text')}
           </button>
@@ -278,6 +443,16 @@ const CharacterDialog: React.FC<CharacterDialogProps> = ({
         className='hidden'
         onChange={(e) => {
           void insertImages(imagesFrom(e.target.files), pickerTarget.current);
+          e.target.value = '';
+        }}
+      />
+      <input
+        ref={avatarInputRef}
+        type='file'
+        accept='image/*'
+        className='hidden'
+        onChange={(e) => {
+          void insertAvatar(imagesFrom(e.target.files));
           e.target.value = '';
         }}
       />

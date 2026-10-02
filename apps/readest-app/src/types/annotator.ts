@@ -4,6 +4,7 @@ export type AnnotationToolType =
   | 'highlight'
   | 'annotate'
   | 'character'
+  | 'character-quote'
   | 'search'
   | 'dictionary'
   | 'translate'

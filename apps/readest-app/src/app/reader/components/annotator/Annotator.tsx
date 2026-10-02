@@ -26,7 +26,10 @@ import {
   deleteCharacter,
   getBookCharacters,
   upsertCharacter,
+  addQuoteToCharacter,
 } from '@/store/characterStore';
+import { getCharacterTags } from '@/store/characterTagsStore';
+import { useCharacterUiStore } from '@/store/characterUiStore';
 import {
   CHARACTER_DOT_COLOR,
   characterIdFromValue,
@@ -106,6 +109,7 @@ import PageTurnHint from './PageTurnHint';
 import SelectionRangeEditor from './SelectionRangeEditor';
 import AnnotationPopup from './AnnotationPopup';
 import CharacterDialog from '../character/CharacterDialog';
+import CharacterListDialog from '../character/CharacterListDialog';
 import DictionaryPopup from './DictionaryPopup';
 import DictionarySheet from './DictionarySheet';
 import NoteEditorSheet from './NoteEditorSheet';
@@ -198,6 +202,11 @@ const Annotator: React.FC<{ bookKey: string; contentInsets: Insets }> = ({
     character: BookCharacter;
     isNew: boolean;
   } | null>(null);
+  const { characterListBookKey, closeCharacterList } = useCharacterUiStore();
+  const characterListOpen = characterListBookKey === bookKey;
+  // When "Dialogue" is tapped with more than one character registered, this
+  // holds the pending selection text/cfi until the user picks who said it.
+  const [characterQuotePicker, setCharacterQuotePicker] = useState(false);
   const [showDeepLPopup, setShowDeepLPopup] = useState(false);
   const [showProofreadPopup, setShowProofreadPopup] = useState(false);
   const [trianglePosition, setTrianglePosition] = useState<Position>();
@@ -300,7 +309,10 @@ const Annotator: React.FC<{ bookKey: string; contentInsets: Insets }> = ({
   const annotPopupMaxWidth = Math.min(useResponsiveSize(300), maxWidth);
   const annotPopupToolSize = useResponsiveSize(44);
   const toolbarToolTypes = getToolbarToolTypes(viewSettings.annotationToolbarItems, canShare);
-  const highlightOptionsGap = toolbarToolTypes.length <= 4 ? 4 : 8;
+  const highlightOptionsAvailable = shouldShowHighlightOptions(toolbarToolTypes, selection ?? null);
+  const annotPopupWidth = highlightOptionsAvailable
+    ? annotPopupMaxWidth
+    : Math.min(Math.max(toolbarToolTypes.length, 1) * annotPopupToolSize, annotPopupMaxWidth);
   // Three 30px styles, a four- or five-color pill (100px or 122px), and three gaps;
   // the global toggle adds a 30px button and a gap. Keep in sync with HighlightOptions.
   const colorStripMinWidth = toolbarToolTypes.length <= 4 ? 100 : 122;
@@ -393,14 +405,7 @@ const Annotator: React.FC<{ bookKey: string; contentInsets: Insets }> = ({
     setProofreadPopupPosition(proofreadPopupPos);
     setTrianglePosition(triangPos);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [
-    selection,
-    bookKey,
-    viewSettings.vertical,
-    annotPopupWidth,
-    annotPopupHeight,
-    footnotePopupDir,
-  ]);
+  }, [selection, bookKey, viewSettings.vertical, footnotePopupDir]);
 
   useEffect(() => {
     const onFootnotePopupAnchor = (event: CustomEvent) => {
@@ -745,7 +750,8 @@ const Annotator: React.FC<{ bookKey: string; contentInsets: Insets }> = ({
   const onDrawAnnotation = (event: Event) => {
     const drawDetail = (event as CustomEvent).detail;
     if (isCharacterValue(drawDetail?.annotation?.value)) {
-      drawDetail.draw(drawCharacterDot, { color: CHARACTER_DOT_COLOR });
+      const character = getBookCharacters(bookKey).find((c) => c.id === drawDetail.annotation.id);
+      drawDetail.draw(drawCharacterDot, { color: character?.color ?? CHARACTER_DOT_COLOR });
       return;
     }
     const viewSettings = getViewSettings(bookKey)!;
@@ -1510,6 +1516,34 @@ const Annotator: React.FC<{ bookKey: string; contentInsets: Insets }> = ({
     setCharacterDialog(null);
   };
 
+  // "Speak as character": highlights the selected dialogue line (reusing the
+  // normal highlight machinery) and saves it as a quote on that character's
+  // sheet.
+  const handleSpeakAsCharacter = async (character: BookCharacter) => {
+    if (!selection?.text) return;
+    const cfi = selection.popup ? selection.cfi : view?.getCFI(selection.index, selection.range);
+    handleHighlight(true);
+    await addQuoteToCharacter(envConfig, bookKey, character.id, selection.text.trim(), cfi);
+    handleDismissPopupAndSelection();
+  };
+
+  // Entry point for the "Dialogue" toolbar button: with no characters yet,
+  // falls back to creating one from the selected line; with exactly one,
+  // assigns the quote to them directly; otherwise opens a picker.
+  const handleAskSpeaker = () => {
+    if (!selection?.text) return;
+    const characters = getBookCharacters(bookKey);
+    if (characters.length === 0) {
+      handleAddCharacter();
+      return;
+    }
+    if (characters.length === 1) {
+      void handleSpeakAsCharacter(characters[0]!);
+      return;
+    }
+    setCharacterQuotePicker(true);
+  };
+
   const handleShare = () => {
     if (!selection?.text) return;
     const position = trianglePosition
@@ -1776,9 +1810,9 @@ const Annotator: React.FC<{ bookKey: string; contentInsets: Insets }> = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [noteEditorTarget]);
 
-  const handleSaveNote = async (note: string) => {
+  const handleSaveNote = (note: string) => {
     if (!noteEditorTarget) return;
-    if (!(await saveBooknoteNoteText(noteEditorTarget.annotationId, note))) return;
+    saveBooknoteNoteText(noteEditorTarget.annotationId, note);
     // The placeholder carries a note now — a real annotation, not a leftover.
     pendingNotePlaceholdersRef.current = [];
     setNoteEditorTarget(null);
@@ -2483,6 +2517,22 @@ const Annotator: React.FC<{ bookKey: string; contentInsets: Insets }> = ({
   };
 
   const selectionAnnotated = selection?.annotated;
+  // For the ✓ (global) toggle in HighlightOptions: figure out whether
+  // the booknote anchored at the current selection is currently global,
+  // and whether the toggle should be shown at all (only meaningful for
+  // re-flowable formats with a non-empty selection text).
+  const currentAnnotation = selection?.cfi
+    ? config.booknotes?.find(
+        (a) => a.type === 'annotation' && a.style && !a.deletedAt && a.cfi === selection.cfi,
+      )
+    : undefined;
+  const globalToggleAvailable =
+    !bookData.isFixedLayout &&
+    !!selection?.annotated &&
+    !!currentAnnotation &&
+    !!selection?.text &&
+    selection.text.trim().length > 0;
+  const globalToggleActive = !!currentAnnotation?.global;
   // A popup-window selection without a CFI (data-attribute footnotes render
   // synthesized text with no real text node in the book) can't anchor
   // anything; and TTS always needs a range in a main view document.
@@ -2517,6 +2567,8 @@ const Annotator: React.FC<{ bookKey: string; contentInsets: Insets }> = ({
         };
       case 'character':
         return { tooltipText: _(label), Icon, onClick: handleAddCharacter };
+      case 'character-quote':
+        return { tooltipText: _(label), Icon, onClick: handleAskSpeaker };
       case 'search':
         return { tooltipText: _(label), Icon, onClick: handleSearch };
       case 'dictionary':
@@ -2757,6 +2809,36 @@ const Annotator: React.FC<{ bookKey: string; contentInsets: Insets }> = ({
           onSave={handleSaveCharacter}
           onDelete={handleDeleteCharacter}
           onClose={() => setCharacterDialog(null)}
+        />
+      )}
+      {characterListOpen && (
+        <CharacterListDialog
+          characters={getBookCharacters(bookKey)}
+          tags={getCharacterTags()}
+          onSelect={(character) => {
+            closeCharacterList();
+            setCharacterDialog({ character, isNew: false });
+          }}
+          onCreate={() => {
+            closeCharacterList();
+            setCharacterDialog({ character: createCharacter(''), isNew: true });
+          }}
+          onClose={closeCharacterList}
+        />
+      )}
+      {characterQuotePicker && (
+        <CharacterListDialog
+          characters={getBookCharacters(bookKey)}
+          tags={getCharacterTags()}
+          onSelect={(character) => {
+            setCharacterQuotePicker(false);
+            void handleSpeakAsCharacter(character);
+          }}
+          onCreate={() => {
+            setCharacterQuotePicker(false);
+            handleAddCharacter();
+          }}
+          onClose={() => setCharacterQuotePicker(false)}
         />
       )}
       {showExportDialog && exportData && bookData.book && (

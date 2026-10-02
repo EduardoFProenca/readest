@@ -63,7 +63,7 @@ const isWholeWord = (range: Range, term: string): boolean => {
 const drawnByDoc = new WeakMap<Document, Map<string, { signature: string; count: number }>>();
 
 const signatureOf = (c: BookCharacter): string =>
-  `${c.updatedAt}:${c.name}:${(c.aliases ?? []).join('|')}`;
+  `${c.updatedAt}:${c.name}:${(c.aliases ?? []).join('|')}:${c.color ?? ''}`;
 
 const termsOf = (c: BookCharacter): string[] =>
   [c.name, ...(c.aliases ?? [])]

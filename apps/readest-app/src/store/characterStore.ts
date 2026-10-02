@@ -46,6 +46,30 @@ export async function upsertCharacter(
   );
 }
 
+/** Appends a quote block (selected text) to a character's sheet and saves it. */
+export async function addQuoteToCharacter(
+  envConfig: EnvConfigType,
+  bookKey: string,
+  characterId: string,
+  quoteText: string,
+  sourceCfi?: string,
+): Promise<void> {
+  const all = useBookDataStore.getState().getConfig(bookKey)?.characters ?? [];
+  const target = all.find((c) => c.id === characterId);
+  if (!target) return;
+  const next: BookCharacter = {
+    ...target,
+    blocks: [...target.blocks, { id: uniqueId(), type: 'quote', text: quoteText, sourceCfi }],
+    updatedAt: Date.now(),
+    deletedAt: null,
+  };
+  await persist(
+    envConfig,
+    bookKey,
+    all.map((c) => (c.id === characterId ? next : c)),
+  );
+}
+
 export async function deleteCharacter(
   envConfig: EnvConfigType,
   bookKey: string,

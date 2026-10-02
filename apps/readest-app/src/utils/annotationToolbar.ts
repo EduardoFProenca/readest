@@ -17,6 +17,7 @@ export const ALL_ANNOTATION_TOOL_TYPES: AnnotationToolType[] = [
   'highlight',
   'annotate',
   'character',
+  'character-quote',
   'search',
   'dictionary',
   'translate',
@@ -25,7 +26,7 @@ export const ALL_ANNOTATION_TOOL_TYPES: AnnotationToolType[] = [
   'share',
 ];
 
-// Default toolbar: the pre-existing tools in their original order, with 'character' after 'annotate'.
+// Default toolbar: the pre-existing tools in their original order, with 'character' and 'character-quote' after 'annotate'.
 // 'share' starts hidden in the Available tray per the #4014 design, and
 // 'copylink' is opt-in the same way (#5452) — a niche action most readers
 // never need, reachable by adding it in Customize Toolbar.
@@ -34,6 +35,7 @@ export const DEFAULT_ANNOTATION_TOOLBAR_ITEMS: AnnotationToolType[] = [
   'highlight',
   'annotate',
   'character',
+  'character-quote',
   'search',
   'dictionary',
   'translate',

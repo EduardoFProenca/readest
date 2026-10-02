@@ -30,6 +30,7 @@ import QuickActionMenu from './annotator/QuickActionMenu';
 import SidebarToggler from './SidebarToggler';
 import BookmarkToggler from './BookmarkToggler';
 import NotebookToggler from './NotebookToggler';
+import CharacterListToggler from './CharacterListToggler';
 import TranslationToggler from './TranslationToggler';
 import ViewMenu from './ViewMenu';
 import SyncInfoDialog from './SyncInfoDialog';
@@ -332,9 +333,16 @@ const HeaderBar: React.FC<HeaderBarProps> = ({
 
         <div className='header-tools-end bg-base-100 z-20 ms-auto flex h-full min-w-max items-center gap-x-4 ps-2 max-[350px]:gap-x-2'>
           <NotebookToggler bookKey={bookKey} />
+          <CharacterListToggler bookKey={bookKey} />
           <Dropdown
             label={_('View Options')}
-            containerClassName='h-8'
+            // On mobile, anchor to the header rather than the toggle, which
+            // sits inward from the edge to leave room for the close button.
+            containerClassName={clsx(
+              'h-8',
+              isMobile &&
+                '[&>div]:static [&_details.dropdown]:static [&_.view-menu]:left-auto! [&_.view-menu]:right-4!',
+            )}
             className='exclude-title-bar-mousedown dropdown-bottom dropdown-end'
             buttonClassName='btn btn-ghost h-8 min-h-8 w-8 p-0 mt-0'
             toggleButton={<MdOutlineMenu />}

@@ -291,11 +291,6 @@ export interface BookStyle {
   highlightOpacity: number;
   codeHighlighting: boolean;
   codeLanguage: string;
-  dialogueHighlight: boolean;
-  dialogueHighlightCustomColor: boolean;
-  dialogueHighlightColor: string;
-  dialogueHighlightCustomTextColor: boolean;
-  dialogueHighlightTextColor: string;
   userStylesheet: string;
   userUIStylesheet: string;
 
@@ -630,16 +625,26 @@ export interface HardcoverBookLink {
   title: string;
 }
 
-export type CharacterBlockType = 'image' | 'title' | 'text';
+export type CharacterBlockType = 'image' | 'text' | 'quote';
 
-/** One element of a character sheet: an image, a heading or a paragraph. */
+/**
+ * One element of a character sheet: a gallery image, a paragraph (optionally
+ * with an embedded bold heading on its first line), or a quote captured from
+ * the book text.
+ */
 export interface CharacterBlock {
   id: string;
   type: CharacterBlockType;
-  /** Heading / paragraph content (type 'title' | 'text'). */
+  /**
+   * Paragraph content (type 'text') or the quoted line itself (type 'quote').
+   */
   text?: string;
+  /** Bold lead-in shown before `text`, e.g. "Backstory" (type 'text' only). */
+  heading?: string;
   /** Downscaled data URL (type 'image'). Empty while the slot is still unfilled. */
   src?: string;
+  /** CFI the quote was selected from, so it can be re-located (type 'quote'). */
+  sourceCfi?: string;
 }
 
 /**
@@ -651,10 +656,23 @@ export interface BookCharacter {
   id: string;
   name: string;
   aliases?: string[];
+  /** Downscaled circular profile photo (data URL), separate from gallery `blocks`. */
+  avatarSrc?: string;
+  /** Margin-dot / highlight color for this character, e.g. '#f97316'. */
+  color?: string;
+  /** IDs into the app-wide character tag list (see characterTagsStore). */
+  tagIds?: string[];
   blocks: CharacterBlock[];
   createdAt: number;
   updatedAt: number;
   deletedAt?: number | null;
+}
+
+/** An app-wide tag (not tied to any one book) used to categorize characters. */
+export interface CharacterTag {
+  id: string;
+  name: string;
+  color?: string;
 }
 
 export interface BookConfig {
