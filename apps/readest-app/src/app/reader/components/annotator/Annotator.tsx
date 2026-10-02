@@ -322,17 +322,7 @@ const Annotator: React.FC<{ bookKey: string; contentInsets: Insets }> = ({
       3 * highlightOptionsGap +
       (globalToggleAvailable ? 30 + highlightOptionsGap : 0),
   );
-  const highlightOptionsAvailable = shouldShowHighlightOptions(toolbarToolTypes, selection ?? null);
-  const annotPopupWidth =
-    annotationNotes.length > 0 || noteEditorTarget
-      ? annotPopupMaxWidth
-      : Math.min(
-          Math.max(
-            Math.max(toolbarToolTypes.length, 1) * annotPopupToolSize,
-            highlightOptionsAvailable ? highlightOptionsMinWidth : 0,
-          ),
-          annotPopupMaxWidth,
-        );
+
   const annotPopupHeight = useResponsiveSize(44);
   // The style/color strip that rides on the toolbar's far side, with its gap.
   const highlightOptionsBlock = useResponsiveSize(28 + 16);
@@ -2521,18 +2511,7 @@ const Annotator: React.FC<{ bookKey: string; contentInsets: Insets }> = ({
   // the booknote anchored at the current selection is currently global,
   // and whether the toggle should be shown at all (only meaningful for
   // re-flowable formats with a non-empty selection text).
-  const currentAnnotation = selection?.cfi
-    ? config.booknotes?.find(
-        (a) => a.type === 'annotation' && a.style && !a.deletedAt && a.cfi === selection.cfi,
-      )
-    : undefined;
-  const globalToggleAvailable =
-    !bookData.isFixedLayout &&
-    !!selection?.annotated &&
-    !!currentAnnotation &&
-    !!selection?.text &&
-    selection.text.trim().length > 0;
-  const globalToggleActive = !!currentAnnotation?.global;
+
   // A popup-window selection without a CFI (data-attribute footnotes render
   // synthesized text with no real text node in the book) can't anchor
   // anything; and TTS always needs a range in a main view document.
