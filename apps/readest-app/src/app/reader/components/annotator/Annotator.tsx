@@ -1645,6 +1645,13 @@ const Annotator: React.FC<{ bookKey: string; contentInsets: Insets; gridInsets?:
     setCharacterDialog(null);
   };
 
+  // Following an @mention saves the sheet being edited, then opens the target.
+  const handleOpenMentionedCharacter = async (current: BookCharacter, targetId: string) => {
+    await handleSaveCharacter(current);
+    const target = getBookCharacters(bookKey).find((c) => c.id === targetId);
+    if (target) setCharacterDialog({ character: target, isNew: false });
+  };
+
   const handleDeleteCharacter = async (character: BookCharacter) => {
     const views = getViewsById(bookKey.split('-')[0]!);
     views.forEach((v) => removeCharacterOverlays(v ?? null, character));
@@ -2998,8 +3005,10 @@ const Annotator: React.FC<{ bookKey: string; contentInsets: Insets; gridInsets?:
           key={characterDialog.character.id}
           character={characterDialog.character}
           isNew={characterDialog.isNew}
+          characters={getBookCharacters(bookKey)}
           onSave={handleSaveCharacter}
           onDelete={handleDeleteCharacter}
+          onOpenMention={handleOpenMentionedCharacter}
           onClose={() => setCharacterDialog(null)}
         />
       )}

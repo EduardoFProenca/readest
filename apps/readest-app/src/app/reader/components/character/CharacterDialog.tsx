@@ -15,6 +15,8 @@ import { useEnv } from '@/context/EnvContext';
 import { BookCharacter, CharacterBlock, CharacterBlockType, CharacterTag } from '@/types/book';
 import { uniqueId } from '@/utils/misc';
 import { getCharacterTags, upsertCharacterTag } from '@/store/characterTagsStore';
+import { parseMentions } from '@/app/reader/utils/characterMentions';
+import { MentionText, MentionTextarea } from './CharacterMentions';
 
 const MAX_IMAGE_SIZE = 800;
 const MAX_AVATAR_SIZE = 256;
@@ -52,16 +54,22 @@ export const CHARACTER_COLOR_SWATCHES = [
 interface CharacterDialogProps {
   character: BookCharacter;
   isNew: boolean;
+  /** All live characters of the book: offered after typing `@` in a note. */
+  characters: BookCharacter[];
   onSave: (character: BookCharacter) => void;
   onDelete: (character: BookCharacter) => void;
+  /** Follow an `@mention`; receives this sheet (to keep its edits) and the target id. */
+  onOpenMention: (current: BookCharacter, targetId: string) => void;
   onClose: () => void;
 }
 
 const CharacterDialog: React.FC<CharacterDialogProps> = ({
   character,
   isNew,
+  characters,
   onSave,
   onDelete,
+  onOpenMention,
   onClose,
 }) => {
   const _ = useTranslation();
@@ -74,6 +82,8 @@ const CharacterDialog: React.FC<CharacterDialogProps> = ({
   const [tagIds, setTagIds] = useState<string[]>(character.tagIds ?? []);
   const [allTags, setAllTags] = useState<CharacterTag[]>(() => getCharacterTags());
   const [newTagName, setNewTagName] = useState('');
+  // A note with mentions shows them as links until the reader edits it.
+  const [editingBlockId, setEditingBlockId] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const avatarInputRef = useRef<HTMLInputElement>(null);
   // Which image slot the file picker was opened for (null = append a new one).
@@ -180,10 +190,9 @@ const CharacterDialog: React.FC<CharacterDialogProps> = ({
     setNewTagName('');
   };
 
-  const handleSave = () => {
+  const buildCharacter = (): BookCharacter => {
     const trimmed = name.trim();
-    if (!trimmed) return;
-    onSave({
+    return {
       ...character,
       name: trimmed,
       aliases: aliases
@@ -195,7 +204,15 @@ const CharacterDialog: React.FC<CharacterDialogProps> = ({
       tagIds,
       // Drop slots the user never filled.
       blocks: blocks.filter((b) => (b.type === 'image' ? !!b.src : !!b.text?.trim())),
-    });
+    };
+  };
+
+  const handleSave = () => {
+    if (name.trim()) onSave(buildCharacter());
+  };
+
+  const handleOpenMention = (targetId: string) => {
+    if (name.trim()) onOpenMention(buildCharacter(), targetId);
   };
 
   const iconBtn = 'btn btn-ghost btn-xs btn-square';
@@ -359,12 +376,31 @@ const CharacterDialog: React.FC<CharacterDialogProps> = ({
                   value={block.heading ?? ''}
                   onChange={(e) => updateBlock(block.id, { heading: e.target.value })}
                 />
-                <textarea
-                  className='textarea textarea-bordered min-h-24 w-full'
-                  placeholder={_('Description')}
-                  value={block.text ?? ''}
-                  onChange={(e) => updateBlock(block.id, { text: e.target.value })}
-                />
+                {editingBlockId !== block.id &&
+                parseMentions(block.text ?? '').some((s) => s.type === 'mention') ? (
+                  <div
+                    className='textarea textarea-bordered min-h-24 w-full cursor-text'
+                    onClick={() => setEditingBlockId(block.id)}
+                  >
+                    <MentionText
+                      text={block.text ?? ''}
+                      characters={characters}
+                      onOpen={handleOpenMention}
+                    />
+                  </div>
+                ) : (
+                  <MentionTextarea
+                    className='textarea textarea-bordered min-h-24 w-full'
+                    placeholder={_('Description (type @ to mention a character)')}
+                    value={block.text ?? ''}
+                    characters={characters}
+                    excludeId={character.id}
+                    autoFocus={editingBlockId === block.id}
+                    onFocus={() => setEditingBlockId(block.id)}
+                    onBlur={() => setEditingBlockId(null)}
+                    onValueChange={(text) => updateBlock(block.id, { text })}
+                  />
+                )}
               </div>
             )}
             {block.type === 'quote' && (
