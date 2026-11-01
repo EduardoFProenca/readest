@@ -28,9 +28,14 @@ vi.spyOn(console, 'log').mockImplementation(() => {});
 
 const DECODE_SEC = 0.5;
 const GAP_SEC = 0.2;
-const flush = async () => {
-  for (let i = 0; i < 20; i++) await new Promise((r) => setTimeout(r, 0));
-};
+// Lets every pending promise chain settle. Everything under test here
+// (scheduler, synthesis, decode, onended) is promise-based, and a macrotask
+// only runs once the microtask queue is fully drained, so a single yield
+// replaces a fixed number of microtask rounds (more than 20 are needed, and
+// the exact depth is an implementation detail). It is not clock-based: the
+// old 20x setTimeout(0) cost ~14ms per timer on Windows, and this test calls
+// flush() hundreds of times.
+const flush = () => new Promise<void>((resolve) => setImmediate(resolve));
 
 // The audio carries its sentence's text, so the fake decoder can record which
 // sentences were decoded.
