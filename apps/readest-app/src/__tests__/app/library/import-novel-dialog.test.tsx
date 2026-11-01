@@ -40,6 +40,7 @@ vi.mock('@/services/webBrowser/webBrowserOptions', () => ({
 const fetchNovelTocMock = vi.fn();
 const downloadNovelMock = vi.fn();
 vi.mock('@/services/novel/novelImport', () => ({
+  MAX_NOVEL_CHAPTERS: 2000,
   fetchNovelToc: (...args: unknown[]) => fetchNovelTocMock(...args),
   downloadNovel: (...args: unknown[]) => downloadNovelMock(...args),
   isNovelImportCancelled: (err: unknown) =>
@@ -89,6 +90,60 @@ afterEach(() => {
   cleanup();
   fetchNovelTocMock.mockReset();
   downloadNovelMock.mockReset();
+});
+
+describe('ImportNovelDialog URL template', () => {
+  const template = 'https://novel.example.com/naruto/c.!@!';
+  const enterTemplate = (start: string, end: string) => {
+    fireEvent.change(screen.getByPlaceholderText('https://example.com/novel'), {
+      target: { value: template },
+    });
+    fireEvent.change(screen.getByLabelText('First chapter'), { target: { value: start } });
+    fireEvent.change(screen.getByLabelText('Last chapter'), { target: { value: end } });
+  };
+
+  it('shows the range fields only for a URL containing !@!', () => {
+    setup();
+    expect(screen.queryByLabelText('First chapter')).toBeNull();
+    fireEvent.change(screen.getByPlaceholderText('https://example.com/novel'), {
+      target: { value: template },
+    });
+    expect(screen.getByLabelText('First chapter')).toBeTruthy();
+    expect(screen.getByLabelText('Last chapter')).toBeTruthy();
+  });
+
+  it('keeps Fetch Chapters disabled until the last chapter is set', () => {
+    setup();
+    enterTemplate('1', '');
+    expect(
+      (screen.getByText('Fetch Chapters') as HTMLButtonElement).closest('button')!.disabled,
+    ).toBe(true);
+  });
+
+  it('builds the chapter list locally and downloads it in order', async () => {
+    setup();
+    enterTemplate('3', '5');
+    fireEvent.click(screen.getByText('Fetch Chapters'));
+    await screen.findByText('3 chapters');
+    expect(fetchNovelTocMock).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Import' }));
+    await waitFor(() => expect(downloadNovelMock).toHaveBeenCalled());
+    const [selectedToc] = downloadNovelMock.mock.calls[0] as [NovelToc];
+    expect(selectedToc.chapters.map((c) => c.url)).toEqual([
+      'https://novel.example.com/naruto/c.3',
+      'https://novel.example.com/naruto/c.4',
+      'https://novel.example.com/naruto/c.5',
+    ]);
+  });
+
+  it('shows an error for a reversed range and stays on the URL step', () => {
+    setup();
+    enterTemplate('9', '2');
+    fireEvent.click(screen.getByText('Fetch Chapters'));
+    expect(screen.getByText('Enter a valid chapter range.')).toBeTruthy();
+    expect(screen.queryByText('Import')).toBeNull();
+  });
 });
 
 describe('ImportNovelDialog', () => {

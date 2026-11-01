@@ -10,6 +10,7 @@ import { openWebBrowser } from '@/services/webBrowser/webBrowser';
 import { getWebBrowserOptions } from '@/services/webBrowser/webBrowserOptions';
 import type { WebBrowserPage } from '@/services/webBrowser/webBrowser';
 import type { NovelToc } from '@/services/novel/chapterList';
+import { buildChapterLinksFromTemplate, hasChapterPlaceholder } from '@/services/novel/urlTemplate';
 
 interface ImportNovelDialogProps {
   isOpen: boolean;
@@ -40,6 +41,8 @@ const ImportNovelDialog: React.FC<ImportNovelDialogProps> = ({ isOpen, onClose, 
   const [selectedChapterIndexes, setSelectedChapterIndexes] = useState<Set<number>>(
     () => new Set(),
   );
+  const [rangeStart, setRangeStart] = useState('1');
+  const [rangeEnd, setRangeEnd] = useState('');
   const [bookTitle, setBookTitle] = useState('');
   const [titleEdited, setTitleEdited] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
@@ -51,6 +54,8 @@ const ImportNovelDialog: React.FC<ImportNovelDialogProps> = ({ isOpen, onClose, 
   useEffect(() => {
     if (!isOpen) return;
     setUrl('');
+    setRangeStart('1');
+    setRangeEnd('');
     setPhase('url');
     setToc(null);
     setSourceUrl('');
@@ -110,8 +115,39 @@ const ImportNovelDialog: React.FC<ImportNovelDialogProps> = ({ isOpen, onClose, 
     if (toc && !titleEdited) setBookTitle(suggestedBookTitle(toc, selected));
   };
 
+  const isTemplate = hasChapterPlaceholder(url);
+
+  const loadTemplateChapters = (target: string) => {
+    try {
+      const links = buildChapterLinksFromTemplate(target, Number(rangeStart), Number(rangeEnd));
+      const first = links[0]!.url;
+      const parsed: NovelToc = {
+        title: new URL(first).hostname.replace(/^www\./, ''),
+        author: '',
+        coverUrl: null,
+        chapters: links,
+        weak: { title: true, author: true },
+      };
+      const selected = new Set(links.map((_, index) => index));
+      setError(null);
+      setToc(parsed);
+      setSourceUrl(first);
+      setRenderChapters(false);
+      setSelectedChapterIndexes(selected);
+      setBookTitle(suggestedBookTitle(parsed, selected));
+      setTitleEdited(false);
+      setPhase('preview');
+    } catch (e) {
+      surfaceError(e);
+    }
+  };
+
   const fetchToc = async (page?: WebBrowserPage) => {
     const target = page?.url ?? url.trim();
+    if (!page && hasChapterPlaceholder(target)) {
+      loadTemplateChapters(target);
+      return;
+    }
     if (!/^https?:\/\//i.test(target)) {
       setError(_('Enter a URL starting with http:// or https://'));
       return;
@@ -257,6 +293,28 @@ const ImportNovelDialog: React.FC<ImportNovelDialogProps> = ({ isOpen, onClose, 
                 if (e.key === 'Enter') void fetchToc();
               }}
             />
+            {isTemplate && (
+              <div className='flex items-center gap-2 text-sm'>
+                <span>{_('Chapters')}</span>
+                <input
+                  type='number'
+                  min={0}
+                  aria-label={_('First chapter')}
+                  className='input eink-bordered input-sm w-24'
+                  value={rangeStart}
+                  onChange={(e) => setRangeStart(e.target.value)}
+                />
+                <span>–</span>
+                <input
+                  type='number'
+                  min={0}
+                  aria-label={_('Last chapter')}
+                  className='input eink-bordered input-sm w-24'
+                  value={rangeEnd}
+                  onChange={(e) => setRangeEnd(e.target.value)}
+                />
+              </div>
+            )}
             {error && <p className='text-error text-sm leading-relaxed'>{error}</p>}
             <div className='flex flex-wrap justify-end gap-2 pt-1'>
               <button
@@ -271,7 +329,7 @@ const ImportNovelDialog: React.FC<ImportNovelDialogProps> = ({ isOpen, onClose, 
                 type='button'
                 className='btn btn-ghost btn-sm eink-bordered'
                 onClick={() => void signIn()}
-                disabled={busy || !url.trim()}
+                disabled={busy || !url.trim() || isTemplate}
               >
                 {_('Sign in with Browser')}
               </button>
@@ -279,7 +337,7 @@ const ImportNovelDialog: React.FC<ImportNovelDialogProps> = ({ isOpen, onClose, 
                 type='button'
                 className='btn btn-contrast btn-sm'
                 onClick={() => void fetchToc()}
-                disabled={busy || !url.trim()}
+                disabled={busy || !url.trim() || (isTemplate && !rangeEnd.trim())}
               >
                 {busy ? (
                   <span className='loading loading-spinner loading-xs' />
