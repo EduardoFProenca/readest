@@ -2752,5 +2752,9 @@
   "Show Two Pages": "Mostrar duas páginas",
   "Book Data": "Dados do livro",
   "Downloaded read-aloud audio and translations": "Áudio de leitura em voz alta baixado e traduções",
-  "Link a Reader": "Vincular um leitor"
+  "Link a Reader": "Vincular um leitor",
+
+  "Search characters": "Pesquisar personagens",
+  "Clear filters": "Limpar filtros",
+  "No characters match your search.": "Nenhum personagem corresponde à sua pesquisa."
 }

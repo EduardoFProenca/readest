@@ -1,8 +1,9 @@
-import React, { useMemo } from 'react';
-import { LuUserPlus } from 'react-icons/lu';
+import React, { useMemo, useState } from 'react';
+import { LuSearch, LuUserPlus } from 'react-icons/lu';
 import Dialog from '@/components/Dialog';
 import { useTranslation } from '@/hooks/useTranslation';
 import { BookCharacter, CharacterTag } from '@/types/book';
+import { filterCharacters } from '../../utils/characterFilter';
 import { CHARACTER_COLOR_SWATCHES } from './CharacterDialog';
 
 interface CharacterListDialogProps {
@@ -22,10 +23,22 @@ const CharacterListDialog: React.FC<CharacterListDialogProps> = ({
 }) => {
   const _ = useTranslation();
   const tagById = useMemo(() => new Map(tags.map((t) => [t.id, t])), [tags]);
+  const [query, setQuery] = useState('');
+  const [selectedTagIds, setSelectedTagIds] = useState<string[]>([]);
   const sorted = useMemo(
-    () => [...characters].sort((a, b) => a.name.localeCompare(b.name)),
-    [characters],
+    () =>
+      filterCharacters(characters, { query, tagIds: selectedTagIds }).sort((a, b) =>
+        a.name.localeCompare(b.name),
+      ),
+    [characters, query, selectedTagIds],
   );
+  const isFiltering = query.trim() !== '' || selectedTagIds.length > 0;
+  const toggleTag = (id: string) =>
+    setSelectedTagIds((prev) => (prev.includes(id) ? prev.filter((t) => t !== id) : [...prev, id]));
+  const clearFilters = () => {
+    setQuery('');
+    setSelectedTagIds([]);
+  };
 
   return (
     <Dialog
@@ -42,9 +55,48 @@ const CharacterListDialog: React.FC<CharacterListDialogProps> = ({
           <LuUserPlus /> {_('New Character')}
         </button>
 
-        {sorted.length === 0 && (
+        {characters.length > 0 && (
+          <>
+            <label className='input input-bordered eink-bordered input-sm flex items-center gap-2'>
+              <LuSearch className='shrink-0' />
+              <input
+                type='search'
+                className='grow'
+                value={query}
+                placeholder={_('Search characters')}
+                onChange={(e) => setQuery(e.target.value)}
+              />
+            </label>
+            {tags.length > 0 && (
+              <div className='flex flex-wrap items-center gap-1'>
+                {tags.map((tag) => (
+                  <button
+                    key={tag.id}
+                    aria-pressed={selectedTagIds.includes(tag.id)}
+                    className={`badge badge-sm eink-bordered ${selectedTagIds.includes(tag.id) ? 'badge-primary' : 'badge-outline'}`}
+                    onClick={() => toggleTag(tag.id)}
+                  >
+                    {tag.name}
+                  </button>
+                ))}
+                {isFiltering && (
+                  <button className='btn btn-ghost btn-xs' onClick={clearFilters}>
+                    {_('Clear filters')}
+                  </button>
+                )}
+              </div>
+            )}
+          </>
+        )}
+
+        {characters.length === 0 && (
           <p className='text-base-content/60 py-8 text-center text-sm'>
             {_('No characters yet. Select a name in the text to add one.')}
+          </p>
+        )}
+        {characters.length > 0 && sorted.length === 0 && (
+          <p className='text-base-content/60 py-8 text-center text-sm'>
+            {_('No characters match your search.')}
           </p>
         )}
 
