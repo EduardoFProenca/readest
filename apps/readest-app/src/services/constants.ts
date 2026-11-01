@@ -391,6 +391,7 @@ export const DEFAULT_BOOK_LAYOUT: BookLayout = {
   disableDoubleClick: false,
   volumeKeysToFlip: false,
   maxColumnCount: 2,
+  duoBookMode: true,
   maxInlineSize: getDefaultMaxInlineSize(),
   maxBlockSize: getDefaultMaxBlockSize(),
   writingMode: 'auto',
@@ -498,6 +499,7 @@ export const DEFAULT_VIEW_CONFIG: ViewConfig = {
   showBatteryPercentage: true,
   use24HourClock: false,
   showPaginationButtons: false,
+  stablePageNumbers: true,
   progressStyle: 'fraction',
   referencePageCount: 0,
 

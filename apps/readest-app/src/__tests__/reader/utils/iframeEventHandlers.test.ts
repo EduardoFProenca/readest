@@ -402,6 +402,83 @@ describe('single-tap opens image gallery / table zoom in reflowable books (#4584
     expect(types).not.toContain('iframe-open-media');
   });
 
+  // foliate's FootnoteHandler opens these in a popup; their image is a marker
+  // (a 「註」 glyph on every note in some annotated classics), not an illustration.
+  describe('note-reference markers open the note, not the image viewer', () => {
+    const OPS = 'http://www.idpf.org/2007/ops';
+    const cases: [string, (a: HTMLAnchorElement, img: HTMLImageElement) => void][] = [
+      ['XHTML epub:type="noteref"', (a) => a.setAttributeNS(OPS, 'epub:type', 'noteref')],
+      ['HTML epub:type="noteref"', (a) => a.setAttribute('epub:type', 'noteref')],
+      ['role="doc-noteref"', (a) => a.setAttribute('role', 'doc-noteref')],
+      ['epub:type="biblioref"', (a) => a.setAttributeNS(OPS, 'epub:type', 'biblioref')],
+      ['a link inside <sup>', (a) => document.createElement('sup').appendChild(a)],
+      ['a link set as superscript', (a) => (a.style.verticalAlign = 'super')],
+      ['a marker set as superscript', (_a, img) => (img.style.verticalAlign = 'super')],
+      ['a.footnote', (a) => a.classList.add('footnote')],
+      ['a.footnote-link', (a) => a.classList.add('footnote-link')],
+    ];
+
+    for (const [label, mark] of cases) {
+      test(label, async () => {
+        const handlers = await importHandlers();
+        const anchor = document.createElement('a');
+        anchor.href = '#note-1';
+        const img = document.createElement('img');
+        img.src = 'blob:http://localhost/note-marker';
+        anchor.appendChild(img);
+        mark(anchor, img);
+
+        tap(handlers, false, img);
+
+        const types = postedMessages().map((m) => m['type']);
+        expect(types).not.toContain('iframe-open-media');
+        expect(types).not.toContain('iframe-single-click');
+      });
+    }
+  });
+
+  describe('a table running past two pages is the text, not media', () => {
+    beforeEach(() => {
+      document.documentElement.style.setProperty('--available-width', '800');
+      document.documentElement.style.setProperty('--available-height', '1200');
+    });
+
+    afterEach(() => {
+      document.documentElement.style.removeProperty('--available-width');
+      document.documentElement.style.removeProperty('--available-height');
+    });
+
+    const sizedTable = (width: number, height: number) => {
+      const table = document.createElement('table');
+      const cell = document.createElement('td');
+      table.appendChild(cell);
+      table.getBoundingClientRect = () => ({ width, height }) as DOMRect;
+      return { table, cell };
+    };
+
+    test('a chapter laid out in one table turns the page', async () => {
+      const handlers = await importHandlers();
+      const { cell } = sizedTable(800, 1200 * 20);
+
+      tap(handlers, false, cell);
+
+      const messages = postedMessages();
+      expect(messages.map((m) => m['type'])).not.toContain('iframe-open-media');
+      const click = messages.find((m) => m['type'] === 'iframe-single-click')!;
+      expect(click['media']).toBeUndefined();
+    });
+
+    test('a data table on one page still zooms', async () => {
+      const handlers = await importHandlers();
+      const { table, cell } = sizedTable(400, 400);
+
+      tap(handlers, false, cell);
+
+      const media = postedMessages().find((m) => m['type'] === 'iframe-open-media')!;
+      expect(media['html']).toBe(table.outerHTML);
+    });
+  });
+
   describe('page-filling media leaves the tap to the page-turn zones (#6424)', () => {
     // foliate publishes the page's content box on the root element.
     beforeEach(() => {
@@ -502,6 +579,69 @@ describe('iframeEventHandlers touch forwarding', () => {
       }),
       '*',
     );
+  });
+
+  describe('a touch whose start element is removed mid-gesture', () => {
+    // A zoom change rebuilds a PDF page's pdf.js text layer. A touch that began
+    // on one of its spans keeps targeting that span after it is detached, so its
+    // later events never reach the document's listeners.
+    const touchDomEvent = (type: string, touches: Touch[], changedTouches = touches) => {
+      const event = new Event(type, { bubbles: true, cancelable: true });
+      Object.defineProperties(event, {
+        touches: { value: touches },
+        changedTouches: { value: changedTouches },
+      });
+      return event as TouchEvent;
+    };
+    let span: HTMLSpanElement;
+    let listeners: [string, (event: Event) => void][];
+
+    beforeEach(async () => {
+      const { handleTouchStart, handleTouchMove, handleTouchEnd, handleTouchCancel } =
+        await importHandlers();
+      listeners = [
+        ['touchstart', (e) => handleTouchStart('book-1', e as TouchEvent)],
+        ['touchmove', (e) => handleTouchMove('book-1', e as TouchEvent)],
+        ['touchend', (e) => handleTouchEnd('book-1', e as TouchEvent)],
+        ['touchcancel', (e) => handleTouchCancel('book-1', e as TouchEvent)],
+      ];
+      for (const [type, listener] of listeners) document.addEventListener(type, listener);
+      span = document.createElement('span');
+      document.body.appendChild(span);
+    });
+
+    afterEach(() => {
+      for (const [type, listener] of listeners) document.removeEventListener(type, listener);
+      span.remove();
+    });
+
+    test('its moves and release still reach the reader', () => {
+      span.dispatchEvent(touchDomEvent('touchstart', [touchPoint(300, 100)]));
+      span.remove();
+      span.dispatchEvent(touchDomEvent('touchmove', [touchPoint(200, 100)]));
+      span.dispatchEvent(touchDomEvent('touchend', [], [touchPoint(100, 100)]));
+
+      expect(postedTypes(postSpy)).toEqual([
+        'iframe-touchstart',
+        'iframe-touchmove',
+        'iframe-touchend',
+      ]);
+    });
+
+    test('a touch on a connected element is forwarded once', () => {
+      span.dispatchEvent(touchDomEvent('touchstart', [touchPoint(300, 100)]));
+      span.dispatchEvent(touchDomEvent('touchmove', [touchPoint(200, 100)]));
+      span.dispatchEvent(touchDomEvent('touchend', [], [touchPoint(100, 100)]));
+      // A later touch elsewhere is not forwarded by the earlier start element.
+      span.remove();
+      span.dispatchEvent(touchDomEvent('touchmove', [touchPoint(200, 100)]));
+
+      expect(postedTypes(postSpy)).toEqual([
+        'iframe-touchstart',
+        'iframe-touchmove',
+        'iframe-touchend',
+      ]);
+    });
   });
 
   test('touchcancel forwards the released finger and clears the gesture', async () => {
