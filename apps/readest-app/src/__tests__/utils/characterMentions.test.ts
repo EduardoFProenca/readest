@@ -3,6 +3,7 @@ import type { BookCharacter } from '@/types/book';
 import {
   applyMention,
   filterMentionCandidates,
+  findCharacterByTerm,
   formatMention,
   getActiveMention,
   parseMentions,
@@ -137,5 +138,30 @@ describe('formatMention / parseMentions', () => {
   test('plain text and a literal @ stay a single text segment', () => {
     expect(parseMentions('sem nada @ aqui')).toEqual([{ type: 'text', text: 'sem nada @ aqui' }]);
     expect(parseMentions('')).toEqual([]);
+  });
+});
+
+describe('findCharacterByTerm', () => {
+  const all = [sasuke, sakura, naruto, sara];
+
+  test('matches the name ignoring case, accents and extra whitespace', () => {
+    expect(findCharacterByTerm(all, 'SARA')).toBe(sara);
+    expect(findCharacterByTerm(all, '  naruto   uzumaki ')).toBe(naruto);
+  });
+
+  test('matches an alias, so selecting it reuses the existing character', () => {
+    expect(findCharacterByTerm(all, 'uchiha')).toBe(sasuke);
+  });
+
+  test('prefers a name over another character alias', () => {
+    const ana = make('a1', 'Ana');
+    const other = make('a2', 'Maria', ['Ana']);
+    expect(findCharacterByTerm([other, ana], 'ana')).toBe(ana);
+  });
+
+  test('does not match partial names, blanks or deleted characters', () => {
+    expect(findCharacterByTerm(all, 'Sasu')).toBeUndefined();
+    expect(findCharacterByTerm(all, '   ')).toBeUndefined();
+    expect(findCharacterByTerm([{ ...sasuke, deletedAt: 1 }], 'Sasuke')).toBeUndefined();
   });
 });

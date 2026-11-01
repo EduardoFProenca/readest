@@ -109,6 +109,7 @@ import {
   isCharacterValue,
   removeCharacterOverlays,
 } from '../../utils/characterOverlays';
+import { findCharacterByTerm } from '../../utils/characterMentions';
 import { annotationToolButtons } from './AnnotationTools';
 import CharacterDialog from '../character/CharacterDialog';
 import CharacterListDialog from '../character/CharacterListDialog';
@@ -1624,9 +1625,7 @@ const Annotator: React.FC<{ bookKey: string; contentInsets: Insets; gridInsets?:
     if (!selection?.text) return;
     const name = selection.text.replace(/\s+/g, ' ').trim().slice(0, 80);
     if (!name) return;
-    const existing = getBookCharacters(bookKey).find(
-      (c) => c.name.toLowerCase() === name.toLowerCase(),
-    );
+    const existing = findCharacterByTerm(getBookCharacters(bookKey), name);
     setCharacterDialog(
       existing
         ? { character: existing, isNew: false }

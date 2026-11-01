@@ -55,6 +55,25 @@ export const normalizeForSearch = (value: string): string =>
   value.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase();
 
 /**
+ * The live character whose name or one of whose aliases equals `term`, ignoring
+ * case, accents and surrounding or repeated whitespace. Names win over aliases,
+ * so a character called "Ana" is found before another one aliased "Ana".
+ */
+export function findCharacterByTerm(
+  characters: BookCharacter[],
+  term: string,
+): BookCharacter | undefined {
+  const clean = (value: string) => normalizeForSearch(value.replace(/\s+/g, ' ').trim());
+  const wanted = clean(term);
+  if (!wanted) return undefined;
+  const live = characters.filter((c) => !c.deletedAt);
+  return (
+    live.find((c) => clean(c.name) === wanted) ??
+    live.find((c) => (c.aliases ?? []).some((alias) => clean(alias) === wanted))
+  );
+}
+
+/**
  * Characters whose name or alias matches `query` (case and accent
  * insensitive). Name prefixes rank first, then alias prefixes and later words
  * of the name, then any other substring.
