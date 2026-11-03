@@ -137,6 +137,18 @@ describe('ImportNovelDialog URL template', () => {
     ]);
   });
 
+  it('records the template as the source of the book', async () => {
+    setup();
+    enterTemplate('1', '3');
+    fireEvent.click(screen.getByText('Fetch Chapters'));
+    await screen.findByText('3 chapters');
+    fireEvent.click(screen.getByRole('button', { name: 'Import' }));
+    await waitFor(() => expect(downloadNovelMock).toHaveBeenCalled());
+    expect(downloadNovelMock.mock.calls[0]![2]).toMatchObject({
+      source: { kind: 'template', sourceUrl: template },
+    });
+  });
+
   it('shows an error for a reversed range and stays on the URL step', () => {
     setup();
     enterTemplate('9', '2');
@@ -147,6 +159,16 @@ describe('ImportNovelDialog URL template', () => {
 });
 
 describe('ImportNovelDialog', () => {
+  it('records the chapter-list URL as the source of an index import', async () => {
+    setup();
+    await goToPreview();
+    fireEvent.click(screen.getByRole('button', { name: 'Import' }));
+    await waitFor(() => expect(downloadNovelMock).toHaveBeenCalled());
+    expect(downloadNovelMock.mock.calls[0]![2]).toMatchObject({
+      source: { kind: 'toc', sourceUrl: 'https://n.example.org/toc' },
+    });
+  });
+
   it('rejects a non-http URL without fetching', () => {
     setup();
     fireEvent.change(screen.getByPlaceholderText('https://example.com/novel'), {

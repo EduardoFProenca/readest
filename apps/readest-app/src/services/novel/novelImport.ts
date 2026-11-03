@@ -21,6 +21,8 @@ import {
 import { ConversionError } from '@/services/send/conversion/types';
 import type { ConvertedBook, EpubChapter, EpubImage } from '@/services/send/conversion/types';
 import { parseChapterList, parseWorkMetadata } from './chapterList';
+import { NOVEL_SOURCE_FILENAME, serializeNovelSource } from './novelSource';
+import type { NovelSource } from './novelSource';
 import type { NovelChapterLink, NovelToc, WorkMetadata } from './chapterList';
 
 /** Hard cap — a runaway TOC heuristic must not schedule tens of thousands of
@@ -60,6 +62,9 @@ export interface NovelDownloadOptions {
   renderPage?: FetchPage;
   /** Sign-in imports render every chapter, including sites with long public previews. */
   renderChapters?: boolean;
+  /** Where the novel came from. When set, a source record is stored in the EPUB
+   *  so the book can later be updated with new chapters. */
+  source?: Pick<NovelSource, 'kind' | 'sourceUrl'>;
   /** Runtime translator for text baked into the EPUB (failure placeholders).
    *  Strings are declared with `stubTranslation` so the i18n scanner sees
    *  them; pass the app's `_` to localize. */
@@ -536,6 +541,19 @@ export async function downloadNovel(
         ).values(),
       ],
       cover,
+      options.source
+        ? [
+            {
+              path: NOVEL_SOURCE_FILENAME,
+              content: serializeNovelSource({
+                version: 1,
+                ...options.source,
+                ...(options.renderChapters ? { renderChapters: true } : {}),
+                chapters: chapters.map(({ title, url }) => ({ title, url })),
+              }),
+            },
+          ]
+        : [],
     );
     const file = new File([blob], `${safeFileName(toc.title)}.epub`, {
       type: 'application/epub+zip',

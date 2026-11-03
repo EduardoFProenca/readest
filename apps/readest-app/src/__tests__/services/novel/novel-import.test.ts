@@ -91,6 +91,25 @@ describe('fetchNovelToc', () => {
 });
 
 describe('downloadNovel', () => {
+  it('stores a source record in the EPUB when a source is given, and none otherwise', async () => {
+    const withSource = await downloadNovel(toc(), TOC_URL, {
+      fetchPage: makeFetchPage(),
+      source: { kind: 'toc', sourceUrl: TOC_URL },
+    });
+    const files = await unzipEpub(withSource.file);
+    const record = JSON.parse(files.get('readest-novel.json')!);
+    expect(record).toMatchObject({ version: 1, kind: 'toc', sourceUrl: TOC_URL });
+    expect(record.chapters).toHaveLength(6);
+    expect(record.chapters[5]).toEqual({
+      title: 'Chapter 6: Part 6',
+      url: `${BASE}/novel/7/6`,
+    });
+    expect(files.get('content.opf')).not.toContain('readest-novel.json');
+
+    const without = await downloadNovel(toc(), TOC_URL, { fetchPage: makeFetchPage() });
+    expect((await unzipEpub(without.file)).has('readest-novel.json')).toBe(false);
+  });
+
   it('builds a multi-chapter EPUB in reading order', async () => {
     const book = await downloadNovel(toc(), TOC_URL, { fetchPage: makeFetchPage() });
     expect(book.title).toBe('My Novel');

@@ -52,6 +52,8 @@ export async function buildEpub(
   metadata: EpubBuildMetadata,
   images: EpubImage[] = [],
   coverImage?: EpubImage,
+  /** Extra zip entries (UTF-8 text) outside the manifest, e.g. a source record. */
+  extraFiles: { path: string; content: string }[] = [],
 ): Promise<Blob> {
   if (chapters.length === 0) {
     throw new Error('buildEpub: no chapters');
@@ -183,6 +185,10 @@ export async function buildEpub(
   </spine>
 </package>`;
   await zipWriter.add('content.opf', new TextReader(contentOpf), zipWriteOptions);
+
+  for (const extra of extraFiles) {
+    await zipWriter.add(extra.path, new TextReader(extra.content), zipWriteOptions);
+  }
 
   return (await zipWriter.close()) as Blob;
 }

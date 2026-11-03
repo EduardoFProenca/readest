@@ -226,6 +226,9 @@ const ImportNovelDialog: React.FC<ImportNovelDialogProps> = ({ isOpen, onClose, 
         signal: controller.signal,
         identityKey,
         renderChapters,
+        source: hasChapterPlaceholder(url)
+          ? { kind: 'template', sourceUrl: url.trim() }
+          : { kind: 'toc', sourceUrl },
         translate: _,
         onProgress: (done, total) => setProgress({ done, total }),
       });
