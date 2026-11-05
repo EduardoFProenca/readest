@@ -365,6 +365,131 @@ export function extractChapterHtml(
   return `<h1>${escapeHtml(chapterTitle)}</h1>\n${sanitizeHtml(body.innerHTML)}`;
 }
 
+interface ChapterBodies {
+  /** One entry per requested chapter, in order; null where the download failed. */
+  results: (EpubChapter | null)[];
+  images: EpubImage[][];
+  failures: number;
+}
+
+/**
+ * Download and extract the given chapters. A chapter that cannot be fetched or
+ * read yields null — callers decide whether that becomes a placeholder page
+ * (a fresh import) or is left out (an update). Cancelling throws `AbortError`.
+ */
+async function fetchChapterBodies(
+  chapters: NovelChapterLink[],
+  options: NovelDownloadOptions,
+  fetchPage: FetchPage,
+  controller: AbortController,
+): Promise<ChapterBodies> {
+  const signal = controller.signal;
+  const translate = options.translate ?? ((key: string) => key);
+  const { onProgress } = options;
+  const total = chapters.length;
+  const results: (EpubChapter | null)[] = new Array(total).fill(null);
+  const images: EpubImage[][] = new Array(total);
+  let remainingAssetBytes = MAX_TOTAL_ASSET_BYTES;
+  let assetQueue: Promise<unknown> = Promise.resolve();
+  const renderPage =
+    options.renderPage ??
+    (!options.fetchPage
+      ? (url: string, signal?: AbortSignal) => renderNovelPage(url, signal, translate)
+      : undefined);
+  let failures = 0;
+  let done = 0;
+  let cursor = 0;
+
+  const fetchChapter = async (url: string): Promise<FetchedPage> => {
+    try {
+      return await fetchPage(url, signal);
+    } catch (err) {
+      // One retry on transient network errors; user cancellation propagates.
+      if (isNovelImportCancelled(err) || signal.aborted) {
+        controller.abort();
+        throw abortError();
+      }
+      // A 52x has already been retried with backoff — don't double up.
+      if (isTransientFetchError(err)) throw err;
+      return await fetchPage(url, signal);
+    }
+  };
+
+  const worker = async () => {
+    while (true) {
+      if (signal?.aborted) throw abortError();
+      const index = cursor++;
+      if (index >= total) return;
+      const link = chapters[index]!;
+      let html: string | null = null;
+      try {
+        assertNovelUrlAllowed(link.url);
+        let page: FetchedPage;
+        let rendered = false;
+        try {
+          if (options.renderChapters && renderPage) {
+            page = await renderPage(link.url, signal);
+            rendered = true;
+          } else {
+            page = await fetchChapter(link.url);
+          }
+        } catch (err) {
+          if (
+            signal?.aborted ||
+            isNovelImportCancelled(err) ||
+            !renderPage ||
+            options.renderChapters ||
+            isTransientFetchError(err)
+          )
+            throw err;
+          page = await renderPage(link.url, signal);
+          rendered = true;
+        }
+        html = extractChapterHtml(page.html, link.title, page.finalUrl);
+        if (html === null && renderPage && !rendered) {
+          assertNovelUrlAllowed(page.finalUrl);
+          page = await renderPage(page.finalUrl, signal);
+          html = extractChapterHtml(page.html, link.title, page.finalUrl);
+        }
+        if (html !== null) {
+          const content = html;
+          const bundled = assetQueue.then(async () => {
+            if (signal?.aborted) throw abortError();
+            const bundle = await bundleAssets(content, page.finalUrl, {
+              maxBytes: remainingAssetBytes,
+              signal,
+            });
+            remainingAssetBytes -= bundle.images.reduce(
+              (sum, image) => sum + image.bytes.byteLength,
+              0,
+            );
+            return bundle;
+          });
+          assetQueue = bundled.catch(() => {});
+          const bundle = await bundled;
+          html = bundle.html;
+          images[index] = bundle.images;
+        }
+      } catch (err) {
+        if (isNovelImportCancelled(err) || signal.aborted) {
+          controller.abort();
+          throw abortError();
+        }
+        html = null;
+      }
+      if (html === null) failures++;
+      else results[index] = { title: link.title, html };
+      done++;
+      onProgress?.(done, total);
+      // Extraction is main-thread CPU work (Tauri IPC can't run in a Worker) —
+      // yield between chapters so a long download doesn't freeze the UI.
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(CHAPTER_CONCURRENCY, total) }, worker));
+  return { results, images, failures };
+}
+
 /**
  * Download every chapter of a parsed novel TOC and assemble a single EPUB.
  * Individual chapter failures become placeholder pages (with the source URL)
@@ -378,7 +503,7 @@ export async function downloadNovel(
   const fetchPage = withTransientRetry(options.fetchPage ?? defaultFetchPage);
   const fetchCover = options.fetchCover ?? defaultFetchCover;
   const translate = options.translate ?? ((key: string) => key);
-  const { onProgress, identityKey = sourceUrl } = options;
+  const { identityKey = sourceUrl } = options;
   const controller = new AbortController();
   const signal = controller.signal;
   const onAbort = () => controller.abort();
@@ -389,112 +514,18 @@ export async function downloadNovel(
 
     const chapters = toc.chapters.slice(0, MAX_NOVEL_CHAPTERS);
     const total = chapters.length;
-    const results: EpubChapter[] = new Array(total);
-    const images: EpubImage[][] = new Array(total);
-    let remainingAssetBytes = MAX_TOTAL_ASSET_BYTES;
-    let assetQueue: Promise<unknown> = Promise.resolve();
-    const renderPage =
-      options.renderPage ??
-      (!options.fetchPage
-        ? (url: string, signal?: AbortSignal) => renderNovelPage(url, signal, translate)
-        : undefined);
-    let failures = 0;
-    let done = 0;
-    let cursor = 0;
-
-    const fetchChapter = async (url: string): Promise<FetchedPage> => {
-      try {
-        return await fetchPage(url, signal);
-      } catch (err) {
-        // One retry on transient network errors; user cancellation propagates.
-        if (isNovelImportCancelled(err) || signal.aborted) {
-          controller.abort();
-          throw abortError();
-        }
-        // A 52x has already been retried with backoff — don't double up.
-        if (isTransientFetchError(err)) throw err;
-        return await fetchPage(url, signal);
-      }
-    };
-
-    const worker = async () => {
-      while (true) {
-        if (signal?.aborted) throw abortError();
-        const index = cursor++;
-        if (index >= total) return;
-        const link = chapters[index]!;
-        let html: string | null = null;
-        try {
-          assertNovelUrlAllowed(link.url);
-          let page: FetchedPage;
-          let rendered = false;
-          try {
-            if (options.renderChapters && renderPage) {
-              page = await renderPage(link.url, signal);
-              rendered = true;
-            } else {
-              page = await fetchChapter(link.url);
-            }
-          } catch (err) {
-            if (
-              signal?.aborted ||
-              isNovelImportCancelled(err) ||
-              !renderPage ||
-              options.renderChapters ||
-              isTransientFetchError(err)
-            )
-              throw err;
-            page = await renderPage(link.url, signal);
-            rendered = true;
-          }
-          html = extractChapterHtml(page.html, link.title, page.finalUrl);
-          if (html === null && renderPage && !rendered) {
-            assertNovelUrlAllowed(page.finalUrl);
-            page = await renderPage(page.finalUrl, signal);
-            html = extractChapterHtml(page.html, link.title, page.finalUrl);
-          }
-          if (html !== null) {
-            const content = html;
-            const bundled = assetQueue.then(async () => {
-              if (signal?.aborted) throw abortError();
-              const bundle = await bundleAssets(content, page.finalUrl, {
-                maxBytes: remainingAssetBytes,
-                signal,
-              });
-              remainingAssetBytes -= bundle.images.reduce(
-                (sum, image) => sum + image.bytes.byteLength,
-                0,
-              );
-              return bundle;
-            });
-            assetQueue = bundled.catch(() => {});
-            const bundle = await bundled;
-            html = bundle.html;
-            images[index] = bundle.images;
-          }
-        } catch (err) {
-          if (isNovelImportCancelled(err) || signal.aborted) {
-            controller.abort();
-            throw abortError();
-          }
-          html = null;
-        }
-        if (html === null) {
-          failures++;
-          html =
-            `<h1>${escapeHtml(link.title)}</h1>` +
+    const bodies = await fetchChapterBodies(chapters, options, fetchPage, controller);
+    const { failures, images } = bodies;
+    const results: EpubChapter[] = bodies.results.map(
+      (chapter, index) =>
+        chapter ?? {
+          title: chapters[index]!.title,
+          html:
+            `<h1>${escapeHtml(chapters[index]!.title)}</h1>` +
             `<p>${escapeHtml(translate(_('This chapter could not be downloaded.')))}</p>` +
-            `<p><a href="${escapeHtml(link.url)}">${escapeHtml(link.url)}</a></p>`;
-        }
-        results[index] = { title: link.title, html };
-        done++;
-        onProgress?.(done, total);
-        // Extraction is main-thread CPU work (Tauri IPC can't run in a Worker) —
-        // yield between chapters so a long download doesn't freeze the UI.
-        await new Promise((resolve) => setTimeout(resolve, 0));
-      }
-    };
-    await Promise.all(Array.from({ length: Math.min(CHAPTER_CONCURRENCY, total) }, worker));
+            `<p><a href="${escapeHtml(chapters[index]!.url)}">${escapeHtml(chapters[index]!.url)}</a></p>`,
+        },
+    );
 
     let cover: EpubImage | undefined;
     if (toc.coverUrl) {
@@ -560,6 +591,57 @@ export async function downloadNovel(
     });
     signal.throwIfAborted();
     return { file, title: toc.title, author: toc.author, chapterCount: total, failures };
+  } finally {
+    options.signal?.removeEventListener('abort', onAbort);
+  }
+}
+
+export interface NovelChapterDownload {
+  /** Chapters ready to append, in source order. */
+  chapters: EpubChapter[];
+  /** One link per chapter above, same order. */
+  links: NovelChapterLink[];
+  images: EpubImage[];
+  /** Chapters that could not be downloaded or read. Never added to the book. */
+  failed: NovelChapterLink[];
+  /** Downloaded fine but after a failed chapter, so left out to keep the book gap-free. */
+  deferred: NovelChapterLink[];
+}
+
+/**
+ * Download only the given (new) chapters for an update. Unlike a fresh import,
+ * a failed chapter is not replaced by a placeholder: nothing from the first
+ * failure onwards is appended, so the book never has a hole and the next
+ * update retries from that chapter. Cancelling throws `AbortError` and
+ * returns nothing.
+ */
+export async function downloadNewChapters(
+  links: NovelChapterLink[],
+  options: Omit<NovelDownloadOptions, 'identityKey' | 'fetchCover' | 'source'> = {},
+): Promise<NovelChapterDownload> {
+  const fetchPage = withTransientRetry(options.fetchPage ?? defaultFetchPage);
+  const controller = new AbortController();
+  const onAbort = () => controller.abort();
+  options.signal?.addEventListener('abort', onAbort, { once: true });
+  if (options.signal?.aborted) controller.abort();
+  try {
+    if (controller.signal.aborted) throw abortError();
+    const wanted = links.slice(0, MAX_NOVEL_CHAPTERS);
+    const bodies = await fetchChapterBodies(wanted, options, fetchPage, controller);
+    if (controller.signal.aborted) throw abortError();
+    const firstFailure = bodies.results.indexOf(null);
+    const keep = firstFailure === -1 ? wanted.length : firstFailure;
+    const imageByPath = new Map<string, EpubImage>();
+    for (const image of bodies.images.slice(0, keep).flat()) {
+      if (image && !imageByPath.has(image.path)) imageByPath.set(image.path, image);
+    }
+    return {
+      chapters: bodies.results.slice(0, keep) as EpubChapter[],
+      links: wanted.slice(0, keep),
+      images: [...imageByPath.values()],
+      failed: wanted.filter((_link, index) => bodies.results[index] === null),
+      deferred: wanted.slice(keep).filter((_link, index) => bodies.results[keep + index] !== null),
+    };
   } finally {
     options.signal?.removeEventListener('abort', onAbort);
   }
