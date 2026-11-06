@@ -84,6 +84,7 @@ export async function readNovelEpub(blob: Blob): Promise<NovelEpubContents> {
     author: dc('creator'),
     language: dc('language'),
     identifier: dc('identifier'),
+    ...(dc('source') ? { source: dc('source') } : {}),
   };
 
   const manifest = new Map<string, { href: string; mime: string }>();
@@ -223,8 +224,9 @@ async function verifyAppend(
   const book = await readNovelEpub(rebuilt);
   const expected = old.chapters.length + addedCount;
   if (book.chapters.length !== expected) throw fail('chapter count is wrong');
-  const { title, author, language, identifier } = old.metadata;
+  const { title, author, language, identifier, source } = old.metadata;
   if (
+    book.metadata.source !== source ||
     book.metadata.title !== title ||
     book.metadata.author !== author ||
     book.metadata.language !== language ||

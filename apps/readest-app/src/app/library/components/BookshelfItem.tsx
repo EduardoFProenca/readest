@@ -252,6 +252,13 @@ const BookshelfItem: React.FC<BookshelfItemProps> = ({
           eventDispatcher.dispatch('show-share-dialog', { book });
         },
       },
+      updateNovel: {
+        text: _('Update Novel'),
+        action: async () => {
+          // The library page hosts the dialog and re-imports the updated file.
+          eventDispatcher.dispatch('update-novel', { book });
+        },
+      },
       offlineDownload: {
         text: _('Download for Offline'),
         action: async () => {
@@ -282,6 +289,7 @@ const BookshelfItem: React.FC<BookshelfItemProps> = ({
     return getBookContextMenuItemIds(book, {
       localSend: isTauriAppPlatform() && isLocalSendEnabled(),
       absOffline: isTauriAppPlatform(),
+      novelUpdate: isTauriAppPlatform(),
     }).map((id) => itemOptions[id]);
   };
 

@@ -60,3 +60,25 @@ export function parseNovelSource(raw: string): NovelSource | null {
     chapters: (chapters as NovelChapterLink[]).map(({ title, url }) => ({ title, url })),
   };
 }
+
+const MARKER_PREFIX = 'readest-novel:';
+
+/**
+ * `dc:source` value that marks an EPUB as a web novel Readest can update. A
+ * plain URL would not do: calibre and others write one for any web-sourced book.
+ * It travels in the book's synced metadata, so the library can tell without
+ * opening the file.
+ */
+export const novelSourceMarker = (sourceUrl: string): string => `${MARKER_PREFIX}${sourceUrl}`;
+
+/** Whether a book's metadata carries the web-novel marker. */
+export const isWebNovelMetadata = (metadata: { source?: unknown } | null | undefined): boolean => {
+  const source = metadata?.source;
+  const values = Array.isArray(source) ? source : [source];
+  return values.some(
+    (value) =>
+      typeof value === 'string' &&
+      value.startsWith(MARKER_PREFIX) &&
+      value.length > MARKER_PREFIX.length,
+  );
+};

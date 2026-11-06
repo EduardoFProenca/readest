@@ -157,6 +157,7 @@ export async function buildEpub(
   const coverManifest = coverImage
     ? `<item id="cover-image" href="OEBPS/${escapeXml(coverImage.path)}" media-type="${escapeXml(coverImage.mime)}"/>`
     : '';
+  const sourceMeta = metadata.source ? `<dc:source>${escapeXml(metadata.source)}</dc:source>` : '';
   const coverMeta = coverImage ? `<meta name="cover" content="cover-image"/>` : '';
   const spine = chapters.map((_, i) => `<itemref idref="chap${i + 1}"/>`).join('\n    ');
 
@@ -173,6 +174,7 @@ export async function buildEpub(
     <dc:language>${escapeXml(language)}</dc:language>
     <dc:creator>${escapeXml(author)}</dc:creator>
     <dc:identifier id="book-id">${escapeXml(identifier)}</dc:identifier>
+    ${sourceMeta}
     ${coverMeta}
   </metadata>
   <manifest>

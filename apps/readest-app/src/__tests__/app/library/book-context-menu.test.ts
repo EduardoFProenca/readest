@@ -183,4 +183,42 @@ describe('getBookContextMenuItemIds', () => {
     expect(second).toEqual(first);
     expect(new Set(first).size).toBe(first.length);
   });
+
+  describe('updateNovel', () => {
+    const ids = (book: Book, novelUpdate = true) =>
+      getBookContextMenuItemIds(book, { novelUpdate });
+    const novel = (overrides: Partial<Book> = {}) =>
+      createBook({
+        downloadedAt: 1,
+        metadata: { source: ['readest-novel:https://novel.example.com/book'] } as never,
+        ...overrides,
+      });
+
+    it('is offered for a downloaded web-novel EPUB when updating is enabled, after the lookup items', () => {
+      const list = ids(novel());
+      expect(list).toContain('updateNovel');
+      expect(list.indexOf('updateNovel')).toBe(list.indexOf('searchGoodreads') + 1);
+    });
+
+    it('is not offered unless the caller enables it, so existing menus are unchanged', () => {
+      expect(getBookContextMenuItemIds(novel())).not.toContain('updateNovel');
+      expect(ids(novel(), false)).not.toContain('updateNovel');
+    });
+
+    it('is hidden for an ordinary EPUB that is not a web novel', () => {
+      expect(ids(createBook({ downloadedAt: 1 }))).not.toContain('updateNovel');
+      const plainSource = createBook({
+        downloadedAt: 1,
+        metadata: { source: ['https://example.com/book'] } as never,
+      });
+      expect(ids(plainSource)).not.toContain('updateNovel');
+    });
+
+    it('is not offered for other formats, cloud-only books or feed books', () => {
+      expect(ids(novel({ format: 'PDF' }))).not.toContain('updateNovel');
+      expect(ids(novel({ downloadedAt: null, uploadedAt: 1 }))).not.toContain('updateNovel');
+      const feed = novel({ url: buildFeedBookUrl('https://x.test/rss') });
+      expect(ids(feed)).not.toContain('updateNovel');
+    });
+  });
 });

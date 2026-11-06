@@ -100,6 +100,9 @@ export type BookMetadata = {
 
   calibreColumns?: CalibreCustomColumn[];
   feedUrl?: string;
+  // `dc:source` entries as parsed from an EPUB (strings, or scheme/value pairs).
+  // Web novels built by Readest carry a `readest-novel:` marker here.
+  source?: string | Array<string | Identifier>;
 
   // Audiobookshelf mirrors. An ABS stub is fileless: its identity is the
   // synthetic `abs://<serverId>/<itemId>` filePath, and the library badge is

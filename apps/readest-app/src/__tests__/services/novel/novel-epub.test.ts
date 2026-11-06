@@ -3,7 +3,12 @@ import { configureZip } from '@/utils/zip';
 import { buildEpub } from '@/services/send/conversion/buildEpub';
 import type { EpubChapter, EpubImage } from '@/services/send/conversion/types';
 import type { NovelChapterLink } from '@/services/novel/chapterList';
-import { NOVEL_SOURCE_FILENAME, serializeNovelSource } from '@/services/novel/novelSource';
+import {
+  NOVEL_SOURCE_FILENAME,
+  isWebNovelMetadata,
+  novelSourceMarker,
+  serializeNovelSource,
+} from '@/services/novel/novelSource';
 import type { NovelSource } from '@/services/novel/novelSource';
 import {
   NovelEpubError,
@@ -124,6 +129,62 @@ describe('readNovelEpub', () => {
 
   test('rejects something that is not an EPUB', async () => {
     await expect(readNovelEpub(new Blob(['not a zip']))).rejects.toBeInstanceOf(Error);
+  });
+});
+
+describe('web novel marker (dc:source)', () => {
+  const marked = { ...META, source: novelSourceMarker('https://novel.example.com/book') };
+  const build = () =>
+    buildEpub([chapter(1), chapter(2)], marked, [], undefined, [
+      {
+        path: NOVEL_SOURCE_FILENAME,
+        content: serializeNovelSource({
+          version: 1,
+          kind: 'toc',
+          sourceUrl: 'https://novel.example.com/book',
+          chapters: [link(1), link(2)],
+        }),
+      },
+    ]);
+
+  test('is written to the package metadata so the library can see it without opening the file', async () => {
+    const files = await unzip(await build());
+    expect(text(files.get('content.opf')!)).toContain(
+      '<dc:source>readest-novel:https://novel.example.com/book</dc:source>',
+    );
+  });
+
+  test('is absent from books built without it', async () => {
+    const files = await unzip(await makeNovel(2));
+    expect(text(files.get('content.opf')!)).not.toContain('<dc:source>');
+  });
+
+  test('is read back, and survives appending chapters', async () => {
+    const original = await build();
+    expect((await readNovelEpub(original)).metadata.source).toBe(marked.source);
+    const result = await appendChaptersToNovelEpub(original, {
+      chapters: [chapter(3)],
+      links: [link(3)],
+    });
+    expect((await readNovelEpub(result.blob)).metadata.source).toBe(marked.source);
+  });
+});
+
+describe('isWebNovelMetadata', () => {
+  const marker = novelSourceMarker('https://novel.example.com/book');
+  test.each([
+    ['a single marker', marker, true],
+    ['a list holding the marker', ['https://other.example.com', marker], true],
+    ['a plain URL (calibre keeps one for any web book)', 'https://novel.example.com/book', false],
+    ['an identifier object', { scheme: 'x', value: marker }, false],
+    ['nothing', undefined, false],
+    ['an empty list', [], false],
+    ['a marker with no URL', 'readest-novel:', false],
+  ])('%s', (_name, source, expected) => {
+    expect(isWebNovelMetadata({ source })).toBe(expected);
+  });
+  test('handles missing metadata', () => {
+    expect(isWebNovelMetadata(undefined)).toBe(false);
   });
 });
 

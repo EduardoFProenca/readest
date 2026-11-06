@@ -16,6 +16,7 @@ import type { TranslationFunc } from '@/hooks/useTranslation';
 import { stubTranslation as _ } from '@/utils/misc';
 import { SIZE_PER_LOC, SIZE_PER_TIME_UNIT } from '@/services/constants';
 import { isFeedBook } from '@/services/rss/feedBookUrl';
+import { isWebNovelMetadata } from '@/services/novel/novelSource';
 import { isAbsOfflineCapable, isAudiobook } from '@/utils/audiobook';
 
 /** Valid sort types for the library */
@@ -1047,6 +1048,7 @@ export type BookContextMenuItemId =
   | 'showDetails'
   | 'showInFinder'
   | 'searchGoodreads'
+  | 'updateNovel'
   | 'download'
   | 'upload'
   | 'share'
@@ -1166,7 +1168,7 @@ export const pickFresherMetadata = (
  */
 export const getBookContextMenuItemIds = (
   book: Book,
-  opts?: { localSend?: boolean; absOffline?: boolean },
+  opts?: { localSend?: boolean; absOffline?: boolean; novelUpdate?: boolean },
 ): BookContextMenuItemId[] => {
   const ids: BookContextMenuItemId[] = ['select', 'group'];
   ids.push(book.readingStatus === 'finished' ? 'markUnread' : 'markFinished');
@@ -1180,6 +1182,17 @@ export const getBookContextMenuItemIds = (
     ids.push('clearStatus');
   }
   ids.push('showDetails', 'showInFinder', 'searchGoodreads');
+  // Updating needs the EPUB on this device. Only books Readest built from a web
+  // novel carry the marker (in their synced metadata), so other EPUBs never see this.
+  if (
+    opts?.novelUpdate &&
+    book.format === 'EPUB' &&
+    book.downloadedAt &&
+    !isFeedBook(book) &&
+    isWebNovelMetadata(book.metadata)
+  ) {
+    ids.push('updateNovel');
+  }
   // A feed book has no file to move: every transfer action would fail, and the
   // share dialog uploads before it can hand out a link (issue #5307).
   if (!isFeedBook(book)) {

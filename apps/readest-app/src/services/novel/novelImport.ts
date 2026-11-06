@@ -21,7 +21,7 @@ import {
 import { ConversionError } from '@/services/send/conversion/types';
 import type { ConvertedBook, EpubChapter, EpubImage } from '@/services/send/conversion/types';
 import { parseChapterList, parseWorkMetadata } from './chapterList';
-import { NOVEL_SOURCE_FILENAME, serializeNovelSource } from './novelSource';
+import { NOVEL_SOURCE_FILENAME, novelSourceMarker, serializeNovelSource } from './novelSource';
 import type { NovelSource } from './novelSource';
 import type { NovelChapterLink, NovelToc, WorkMetadata } from './chapterList';
 
@@ -247,6 +247,9 @@ export interface FetchNovelTocOptions {
   page?: FetchedPage;
   fetchPage?: FetchPage;
   signal?: AbortSignal;
+  /** Ask the first chapter for the work's title/author when the list can't tell.
+   *  Updates turn this off: the book already has its identity. Default true. */
+  backfillMetadata?: boolean;
 }
 
 /** Fetch a TOC page and parse it into a capped, ordered chapter list. */
@@ -267,7 +270,9 @@ export async function fetchNovelToc(
   const chapters = toc.chapters.slice(0, MAX_NOVEL_CHAPTERS);
   return {
     ...toc,
-    ...(await backfillMetadata(toc, chapters, fetchPage, options.signal)),
+    ...(options.backfillMetadata === false
+      ? {}
+      : await backfillMetadata(toc, chapters, fetchPage, options.signal)),
     chapters,
   };
 }
@@ -562,6 +567,7 @@ export async function downloadNovel(
         author: toc.author,
         language,
         identifier: stableIdentifier(identityKey),
+        ...(options.source ? { source: novelSourceMarker(options.source.sourceUrl) } : {}),
       },
       [
         ...new Map(

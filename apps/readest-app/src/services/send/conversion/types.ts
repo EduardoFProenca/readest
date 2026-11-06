@@ -36,6 +36,8 @@ export interface EpubBuildMetadata {
   /** Stable EPUB `dc:identifier` — derive deterministically so re-converting
    *  the same source yields the same bytes and dedups on import. */
   identifier: string;
+  /** Optional `dc:source`, written as-is. Web novels use it as their marker. */
+  source?: string;
   /** Optional in-chapter heading TOC. When present, `toc.ncx` `navMap`
    *  uses these instead of a single chapter-level navPoint — the EPUB
    *  reader's sidebar then shows the article's section structure. */

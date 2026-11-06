@@ -124,6 +124,7 @@ import ImportFromFolderDialog, {
 } from './components/ImportFromFolderDialog';
 import WebSourcesDialog from './components/WebSourcesDialog';
 import ImportNovelDialog from './components/ImportNovelDialog';
+import UpdateNovelDialog from './components/UpdateNovelDialog';
 import ImportPastedTextDialog from './components/ImportPastedTextDialog';
 import NowPlayingBar from './components/NowPlayingBar';
 import { convertToEpubWithWorker } from '@/services/send/conversion/conversionWorker';
@@ -274,6 +275,7 @@ const LibraryPageContent = ({ searchParams }: { searchParams: ReadonlyURLSearchP
   const [showAddFeed, setShowAddFeed] = useState(false);
   const [showWebSources, setShowWebSources] = useState(false);
   const [showImportNovel, setShowImportNovel] = useState(false);
+  const [updateNovelBook, setUpdateNovelBook] = useState<Book | null>(null);
   const [showImportPastedText, setShowImportPastedText] = useState(false);
   const [importMenuAnchor, setImportMenuAnchor] = useState<HTMLElement | null>(null);
   const [loading, setLoading] = useState(false);
@@ -1423,6 +1425,21 @@ const LibraryPageContent = ({ searchParams }: { searchParams: ReadonlyURLSearchP
     await importBooks([{ file }], groupId);
   };
 
+  // The updated EPUB keeps the book's identifier, so the normal import re-keys the
+  // existing row and carries its reading progress, notes and group over.
+  const handleApplyNovelUpdate = async (file: File) => {
+    const { importedCount } = await importBooks([{ file }], undefined, { silent: true });
+    if (importedCount === 0) throw new Error('The updated novel could not be imported');
+  };
+
+  useEffect(() => {
+    const onUpdateNovel = (event: CustomEvent) => {
+      setUpdateNovelBook((event.detail as { book: Book }).book);
+    };
+    eventDispatcher.on('update-novel', onUpdateNovel);
+    return () => eventDispatcher.off('update-novel', onUpdateNovel);
+  }, []);
+
   const handleImportPastedText = async (file: File) => {
     setIsSelectMode(false);
     const { importedCount } = await importBooks([{ file }], getImportTargetGroupId());
@@ -2286,6 +2303,11 @@ const LibraryPageContent = ({ searchParams }: { searchParams: ReadonlyURLSearchP
         isOpen={showImportNovel}
         onClose={() => setShowImportNovel(false)}
         onImport={handleImportNovelFile}
+      />
+      <UpdateNovelDialog
+        book={updateNovelBook}
+        onClose={() => setUpdateNovelBook(null)}
+        onApply={handleApplyNovelUpdate}
       />
       <ImportPastedTextDialog
         isOpen={showImportPastedText}
