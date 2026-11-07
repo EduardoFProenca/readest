@@ -64,6 +64,8 @@ export class ConversionError extends Error {
       | 'fetch_failed'
       | 'fetch_transient'
       | 'login_wall',
+    /** HTTP status, when the failure was an HTTP response. */
+    readonly status?: number,
   ) {
     super(message);
     this.name = 'ConversionError';

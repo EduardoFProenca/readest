@@ -120,6 +120,37 @@ describe('UpdateNovelDialog', () => {
     expect(onApply).not.toHaveBeenCalled();
   });
 
+  it('shows a running count, without a percentage, when the total is not known (URL template books)', async () => {
+    updateNovelMock.mockImplementation(
+      (_file: Blob, options: NovelUpdateOptions) =>
+        new Promise(() => {
+          options.onStage?.('downloading');
+          options.onProgress?.(8, 0);
+        }),
+    );
+    setup();
+    expect(await screen.findByText('8 chapters downloaded so far')).toBeTruthy();
+    expect(screen.queryByText(/%/)).toBeNull();
+    expect(screen.queryByRole('progressbar')).toBeNull();
+  });
+
+  it('tells the user when the per-update limit was reached so they can update again', async () => {
+    updateNovelMock.mockResolvedValue(updated({ addedCount: 200, limitReached: true }));
+    setup();
+    expect(
+      await screen.findByText(
+        'This update stopped at its limit. Update again to look for more chapters.',
+      ),
+    ).toBeTruthy();
+  });
+
+  it('does not mention the limit when it was not reached', async () => {
+    updateNovelMock.mockResolvedValue(updated());
+    setup();
+    await screen.findByText('Added 2 new chapters.');
+    expect(screen.queryByText(/stopped at its limit/)).toBeNull();
+  });
+
   it('says so when the book is already up to date', async () => {
     updateNovelMock.mockResolvedValue({ outcome: 'up_to_date', totalFound: 5 });
     const { onApply } = setup();
@@ -174,7 +205,6 @@ describe('UpdateNovelDialog', () => {
       'no_source',
       'This book has no saved source, so it cannot be updated. Import it again to enable updates.',
     ],
-    ['template_source', 'Books imported from a URL template cannot be updated yet.'],
   ])('explains why a %s book cannot be updated', async (reason, message) => {
     updateNovelMock.mockResolvedValue({ outcome: 'unsupported', reason });
     setup();

@@ -133,19 +133,22 @@ const UpdateNovelDialog: React.FC<UpdateNovelDialogProps> = ({ book, onClose, on
         ];
       case 'unsupported':
         return [
-          result.reason === 'template_source'
-            ? _('Books imported from a URL template cannot be updated yet.')
-            : result.reason === 'no_source'
-              ? _(
-                  'This book has no saved source, so it cannot be updated. Import it again to enable updates.',
-                )
-              : _('This book was not imported from a web novel, so it cannot be updated.'),
+          result.reason === 'no_source'
+            ? _(
+                'This book has no saved source, so it cannot be updated. Import it again to enable updates.',
+              )
+            : _('This book was not imported from a web novel, so it cannot be updated.'),
         ];
       case 'updated': {
         const lines = [
           _('Added {{count}} new chapters.', { count: result.addedCount }),
           _('The book now has {{count}} chapters.', { count: result.chapterCount }),
         ];
+        if (result.limitReached) {
+          lines.push(
+            _('This update stopped at its limit. Update again to look for more chapters.'),
+          );
+        }
         const notAdded = result.failed.length + result.deferred.length;
         if (notAdded > 0) {
           lines.push(
@@ -184,20 +187,29 @@ const UpdateNovelDialog: React.FC<UpdateNovelDialogProps> = ({ book, onClose, on
             ) : (
               <>
                 <p className='text-base-content/70 text-sm'>{_('Downloading new chapters…')}</p>
-                <div className='flex justify-between gap-4 text-sm tabular-nums'>
-                  <span className='text-base-content/70'>
-                    {state.done} / {state.total}
-                  </span>
-                  <span className='font-medium'>
-                    {Math.round((state.done / (state.total || 1)) * 100)}%
-                  </span>
-                </div>
-                <progress
-                  aria-label={_('Downloading new chapters…')}
-                  className='progress eink-bordered block h-2 w-full'
-                  value={state.done}
-                  max={state.total || 1}
-                />
+                {state.total > 0 ? (
+                  <>
+                    <div className='flex justify-between gap-4 text-sm tabular-nums'>
+                      <span className='text-base-content/70'>
+                        {state.done} / {state.total}
+                      </span>
+                      <span className='font-medium'>
+                        {Math.round((state.done / state.total) * 100)}%
+                      </span>
+                    </div>
+                    <progress
+                      aria-label={_('Downloading new chapters…')}
+                      className='progress eink-bordered block h-2 w-full'
+                      value={state.done}
+                      max={state.total}
+                    />
+                  </>
+                ) : (
+                  // URL-template books are probed until a chapter does not exist: no total yet.
+                  <p className='text-sm tabular-nums'>
+                    {_('{{count}} chapters downloaded so far', { count: state.done })}
+                  </p>
+                )}
               </>
             )}
             <p className='text-base-content/60 text-sm leading-relaxed'>

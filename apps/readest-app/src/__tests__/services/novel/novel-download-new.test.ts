@@ -113,7 +113,14 @@ describe('downloadNewChapters', () => {
   it('returns an empty result for no chapters', async () => {
     const calls: string[] = [];
     const result = await downloadNewChapters([], { fetchPage: makeFetchPage({}, calls) });
-    expect(result).toEqual({ chapters: [], links: [], images: [], failed: [], deferred: [] });
+    expect(result).toEqual({
+      chapters: [],
+      links: [],
+      images: [],
+      failed: [],
+      failureKinds: [],
+      deferred: [],
+    });
     expect(calls).toEqual([]);
   });
 
@@ -124,5 +131,55 @@ describe('downloadNewChapters', () => {
     );
     expect(result.links).toEqual([]);
     expect(result.failed).toHaveLength(1);
+  });
+
+  describe('when the plain fetch says the chapter does not exist (HTTP 404)', () => {
+    const missing = () =>
+      new ConversionError('Could not fetch the page (HTTP 404).', 'fetch_failed', 404);
+    const renderPage = vi.fn(async (url: string) => ({ html: chapterPage(1), finalUrl: url }));
+
+    it('still tries the browser renderer by default, as an import does', async () => {
+      renderPage.mockClear();
+      const result = await downloadNewChapters(links(1, 1), {
+        fetchPage: makeFetchPage({ 1: missing() }),
+        renderPage,
+      });
+      expect(renderPage).toHaveBeenCalled();
+      expect(result.links).toEqual(links(1, 1));
+    });
+
+    it('skips the renderer when asked, and reports the chapter as missing', async () => {
+      renderPage.mockClear();
+      const result = await downloadNewChapters(links(1, 1), {
+        fetchPage: makeFetchPage({ 1: missing() }),
+        renderPage,
+        skipRenderOnMissing: true,
+      });
+      expect(renderPage).not.toHaveBeenCalled();
+      expect(result.failureKinds).toEqual(['missing']);
+    });
+
+    it('does not skip the renderer for other failures such as a bot block', async () => {
+      renderPage.mockClear();
+      await downloadNewChapters(links(1, 1), {
+        fetchPage: makeFetchPage({
+          1: new ConversionError('blocked (HTTP 403)', 'fetch_failed', 403),
+        }),
+        renderPage,
+        skipRenderOnMissing: true,
+      });
+      expect(renderPage).toHaveBeenCalled();
+    });
+  });
+
+  it('classifies failures: missing, unreadable page, other error', async () => {
+    const result = await downloadNewChapters(links(1, 3), {
+      fetchPage: makeFetchPage({
+        1: new ConversionError('Could not fetch the page (HTTP 404).', 'fetch_failed', 404),
+        2: '<html><body><p>Not found</p></body></html>',
+        3: new ConversionError('temporarily unavailable', 'fetch_transient'),
+      }),
+    });
+    expect(result.failureKinds).toEqual(['missing', 'unreadable', 'error']);
   });
 });

@@ -112,14 +112,6 @@ describe('updateNovel', () => {
     expect(result).toMatchObject({ outcome: 'unsupported', reason: 'no_source' });
   });
 
-  it('does not support books imported from a URL template yet', async () => {
-    const novel = await makeNovel(5, { kind: 'template', sourceUrl: `${BASE}/novel/7/!@!` });
-    const calls: string[] = [];
-    const result = await updateNovel(novel, { fetchPage: site(links(1, 5), { calls }) });
-    expect(result).toMatchObject({ outcome: 'unsupported', reason: 'template_source' });
-    expect(calls).toEqual([]);
-  });
-
   it('does not support a file that is not a web-novel EPUB', async () => {
     expect(await updateNovel(new Blob(['not a zip']), { fetchPage: site([]) })).toMatchObject({
       outcome: 'unsupported',

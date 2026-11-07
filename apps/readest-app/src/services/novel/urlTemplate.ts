@@ -51,3 +51,21 @@ export function buildChapterLinksFromTemplate(
     return { title: `Chapter ${n}`, url: urlFor(n) };
   });
 }
+
+const escapeRegExp = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+/**
+ * The chapter number a template put into `url`, or null when `url` does not
+ * follow the template. A marker used more than once must carry the same number
+ * every time. The inverse of `buildChapterLinksFromTemplate`.
+ */
+export function chapterNumberFromUrl(template: string, url: string): number | null {
+  if (!hasChapterPlaceholder(template)) return null;
+  const parts = template.split(CHAPTER_PLACEHOLDER).map(escapeRegExp);
+  const source = `^${parts[0]}(\\d+)${parts
+    .slice(1)
+    .map((part, index) => (index === 0 ? part : `\\1${part}`))
+    .join('')}$`;
+  const match = new RegExp(source).exec(url);
+  return match ? Number(match[1]) : null;
+}

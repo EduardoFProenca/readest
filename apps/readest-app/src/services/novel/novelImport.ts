@@ -62,6 +62,9 @@ export interface NovelDownloadOptions {
   renderPage?: FetchPage;
   /** Sign-in imports render every chapter, including sites with long public previews. */
   renderChapters?: boolean;
+  /** Don't retry a chapter in the browser renderer when the plain fetch got HTTP 404/410.
+   *  Probing for the end of a URL-template novel relies on that being the answer. */
+  skipRenderOnMissing?: boolean;
   /** Where the novel came from. When set, a source record is stored in the EPUB
    *  so the book can later be updated with new chapters. */
   source?: Pick<NovelSource, 'kind' | 'sourceUrl'>;
@@ -230,6 +233,7 @@ const defaultFetchPage: FetchPage = async (url, signal) => {
         ? `The site blocked the request (HTTP ${res.status}). Try again later.`
         : `Could not fetch the page (HTTP ${res.status}).`,
       'fetch_failed',
+      res.status,
     );
   }
   const body = new Uint8Array(await res.arrayBuffer());
@@ -370,9 +374,23 @@ export function extractChapterHtml(
   return `<h1>${escapeHtml(chapterTitle)}</h1>\n${sanitizeHtml(body.innerHTML)}`;
 }
 
+/**
+ * Why a chapter could not be downloaded. `missing` (HTTP 404/410) and `unreadable`
+ * (a page with no chapter text, such as a "not found" page served as 200) both
+ * mean the chapter does not exist; `error` (network, 5xx, bot block) says nothing about it.
+ */
+export type ChapterFailureKind = 'missing' | 'unreadable' | 'error';
+
+const isMissingChapterError = (err: unknown): boolean =>
+  err instanceof ConversionError &&
+  err.code === 'fetch_failed' &&
+  (err.status === 404 || err.status === 410);
+
 interface ChapterBodies {
   /** One entry per requested chapter, in order; null where the download failed. */
   results: (EpubChapter | null)[];
+  /** Parallel to `results`; set only where the download failed. */
+  failureKinds: (ChapterFailureKind | undefined)[];
   images: EpubImage[][];
   failures: number;
 }
@@ -394,6 +412,7 @@ async function fetchChapterBodies(
   const total = chapters.length;
   const results: (EpubChapter | null)[] = new Array(total).fill(null);
   const images: EpubImage[][] = new Array(total);
+  const failureKinds: (ChapterFailureKind | undefined)[] = new Array(total).fill(undefined);
   let remainingAssetBytes = MAX_TOTAL_ASSET_BYTES;
   let assetQueue: Promise<unknown> = Promise.resolve();
   const renderPage =
@@ -427,6 +446,7 @@ async function fetchChapterBodies(
       if (index >= total) return;
       const link = chapters[index]!;
       let html: string | null = null;
+      let kind: ChapterFailureKind = 'unreadable';
       try {
         assertNovelUrlAllowed(link.url);
         let page: FetchedPage;
@@ -444,7 +464,8 @@ async function fetchChapterBodies(
             isNovelImportCancelled(err) ||
             !renderPage ||
             options.renderChapters ||
-            isTransientFetchError(err)
+            isTransientFetchError(err) ||
+            (options.skipRenderOnMissing && isMissingChapterError(err))
           )
             throw err;
           page = await renderPage(link.url, signal);
@@ -481,9 +502,12 @@ async function fetchChapterBodies(
           throw abortError();
         }
         html = null;
+        kind = isMissingChapterError(err) ? 'missing' : 'error';
       }
-      if (html === null) failures++;
-      else results[index] = { title: link.title, html };
+      if (html === null) {
+        failures++;
+        failureKinds[index] = kind;
+      } else results[index] = { title: link.title, html };
       done++;
       onProgress?.(done, total);
       // Extraction is main-thread CPU work (Tauri IPC can't run in a Worker) —
@@ -492,7 +516,7 @@ async function fetchChapterBodies(
     }
   };
   await Promise.all(Array.from({ length: Math.min(CHAPTER_CONCURRENCY, total) }, worker));
-  return { results, images, failures };
+  return { results, failureKinds, images, failures };
 }
 
 /**
@@ -610,6 +634,8 @@ export interface NovelChapterDownload {
   images: EpubImage[];
   /** Chapters that could not be downloaded or read. Never added to the book. */
   failed: NovelChapterLink[];
+  /** Why each chapter in `failed` failed, in the same order. */
+  failureKinds: ChapterFailureKind[];
   /** Downloaded fine but after a failed chapter, so left out to keep the book gap-free. */
   deferred: NovelChapterLink[];
 }
@@ -646,6 +672,7 @@ export async function downloadNewChapters(
       links: wanted.slice(0, keep),
       images: [...imageByPath.values()],
       failed: wanted.filter((_link, index) => bodies.results[index] === null),
+      failureKinds: bodies.failureKinds.filter((kind): kind is ChapterFailureKind => !!kind),
       deferred: wanted.slice(keep).filter((_link, index) => bodies.results[keep + index] !== null),
     };
   } finally {
