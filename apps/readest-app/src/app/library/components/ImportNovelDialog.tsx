@@ -14,6 +14,8 @@ import { buildChapterLinksFromTemplate, hasChapterPlaceholder } from '@/services
 
 interface ImportNovelDialogProps {
   isOpen: boolean;
+  /** 'template' opens the URL-template flow (`!@!` + chapter range) directly. */
+  mode?: 'toc' | 'template';
   onClose: () => void;
   /** Hand the finished `.epub` to the normal library import path. */
   onImport: (file: File) => Promise<void>;
@@ -28,7 +30,12 @@ type Phase = 'url' | 'preview' | 'downloading';
  * a cancellable download progress bar. Tauri-only, like "From Web Browser" — a
  * web build can't fetch cross-origin pages.
  */
-const ImportNovelDialog: React.FC<ImportNovelDialogProps> = ({ isOpen, onClose, onImport }) => {
+const ImportNovelDialog: React.FC<ImportNovelDialogProps> = ({
+  isOpen,
+  mode = 'toc',
+  onClose,
+  onImport,
+}) => {
   const _ = useTranslation();
   const [url, setUrl] = useState('');
   const [phase, setPhase] = useState<Phase>('url');
@@ -115,7 +122,23 @@ const ImportNovelDialog: React.FC<ImportNovelDialogProps> = ({ isOpen, onClose, 
     if (toc && !titleEdited) setBookTitle(suggestedBookTitle(toc, selected));
   };
 
-  const isTemplate = hasChapterPlaceholder(url);
+  const templateMode = mode === 'template';
+  const isTemplate = templateMode || hasChapterPlaceholder(url);
+  const markerMissing = templateMode && !!url.trim() && !hasChapterPlaceholder(url);
+  let templatePreview: { first: string; last: string; count: number } | null = null;
+  if (isTemplate && hasChapterPlaceholder(url)) {
+    try {
+      const links = buildChapterLinksFromTemplate(url, Number(rangeStart), Number(rangeEnd));
+      templatePreview = {
+        first: links[0]!.url,
+        last: links[links.length - 1]!.url,
+        count: links.length,
+      };
+    } catch {
+      templatePreview = null;
+    }
+  }
+  const templateInvalid = isTemplate && (!hasChapterPlaceholder(url) || !rangeEnd.trim());
 
   const loadTemplateChapters = (target: string) => {
     try {
@@ -272,7 +295,7 @@ const ImportNovelDialog: React.FC<ImportNovelDialogProps> = ({ isOpen, onClose, 
     <Dialog
       isOpen={isOpen}
       onClose={close}
-      title={_('Import Web Novel')}
+      title={templateMode ? _('Import from URL Template') : _('Import Web Novel')}
       // Size to content — same override as WebSourcesDialog.
       boxClassName='sm:w-[480px]! sm:max-w-[480px]! sm:h-auto! sm:max-h-[80vh]!'
     >
@@ -280,15 +303,27 @@ const ImportNovelDialog: React.FC<ImportNovelDialogProps> = ({ isOpen, onClose, 
         {phase === 'url' && (
           <>
             <p className='text-base-content/60 text-sm leading-relaxed'>
-              {_(
-                'Paste the link to a web novel’s chapter list. For members-only sites, sign in with Browser, open the chapter list, then choose Use Chapter List.',
-              )}
+              {templateMode
+                ? _(
+                    'Write !@! where the chapter number goes in the address, then choose the first and last chapter. Example:',
+                  )
+                : _(
+                    'Paste the link to a web novel’s chapter list. For members-only sites, sign in with Browser, open the chapter list, then choose Use Chapter List.',
+                  )}
             </p>
+            {templateMode && (
+              <code className='bg-base-200 break-all rounded px-2 py-1 text-xs'>
+                https://novel.example.com/naruto/c.!@!
+              </code>
+            )}
             <input
               type='url'
               autoFocus
               className='input eink-bordered placeholder:text-base-content/35 w-full'
-              placeholder='https://example.com/novel'
+              aria-label={templateMode ? _('URL template') : undefined}
+              placeholder={
+                templateMode ? 'https://site.com/novel/c.!@!' : 'https://example.com/novel'
+              }
               value={url}
               disabled={busy}
               onChange={(e) => setUrl(e.target.value)}
@@ -318,6 +353,20 @@ const ImportNovelDialog: React.FC<ImportNovelDialogProps> = ({ isOpen, onClose, 
                 />
               </div>
             )}
+            {markerMissing && (
+              <p className='text-warning text-sm'>
+                {_('Add !@! to the address where the chapter number goes.')}
+              </p>
+            )}
+            {templatePreview && (
+              <div className='text-base-content/70 flex flex-col gap-1 text-xs'>
+                <span className='break-all'>{templatePreview.first}</span>
+                {templatePreview.count > 1 && (
+                  <span className='break-all'>{templatePreview.last}</span>
+                )}
+                <span>{_('{{count}} chapters', { count: templatePreview.count })}</span>
+              </div>
+            )}
             {error && <p className='text-error text-sm leading-relaxed'>{error}</p>}
             <div className='flex flex-wrap justify-end gap-2 pt-1'>
               <button
@@ -328,19 +377,21 @@ const ImportNovelDialog: React.FC<ImportNovelDialogProps> = ({ isOpen, onClose, 
               >
                 {_('Cancel')}
               </button>
-              <button
-                type='button'
-                className='btn btn-ghost btn-sm eink-bordered'
-                onClick={() => void signIn()}
-                disabled={busy || !url.trim() || isTemplate}
-              >
-                {_('Sign in with Browser')}
-              </button>
+              {!templateMode && (
+                <button
+                  type='button'
+                  className='btn btn-ghost btn-sm eink-bordered'
+                  onClick={() => void signIn()}
+                  disabled={busy || !url.trim() || isTemplate}
+                >
+                  {_('Sign in with Browser')}
+                </button>
+              )}
               <button
                 type='button'
                 className='btn btn-contrast btn-sm'
                 onClick={() => void fetchToc()}
-                disabled={busy || !url.trim() || (isTemplate && !rangeEnd.trim())}
+                disabled={busy || !url.trim() || templateInvalid}
               >
                 {busy ? (
                   <span className='loading loading-spinner loading-xs' />

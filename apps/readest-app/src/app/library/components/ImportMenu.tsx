@@ -1,5 +1,5 @@
 import clsx from 'clsx';
-import { MdContentPaste, MdLanguage, MdMenuBook, MdRssFeed } from 'react-icons/md';
+import { MdContentPaste, MdLanguage, MdLooksOne, MdMenuBook, MdRssFeed } from 'react-icons/md';
 import { LuLibrary } from 'react-icons/lu';
 import { IoFileTray } from 'react-icons/io5';
 import { useEnv } from '@/context/EnvContext';
@@ -14,7 +14,7 @@ export interface ImportMenuProps {
   onImportPastedText?: () => void;
   onImportBooksFromDirectory?: () => void;
   onImportFromWebBrowser?: () => void;
-  onImportBookFromNovelUrl?: () => void;
+  onImportBookFromNovelUrl?: (mode?: 'toc' | 'template') => void;
   onOpenCatalogManager: () => void;
   onOpenFeeds: () => void;
 }
@@ -54,7 +54,12 @@ const ImportMenu: React.FC<ImportMenuProps> = ({
   };
 
   const handleImportFromNovelUrl = () => {
-    onImportBookFromNovelUrl?.();
+    onImportBookFromNovelUrl?.('toc');
+    setIsDropdownOpen?.(false);
+  };
+
+  const handleImportFromUrlTemplate = () => {
+    onImportBookFromNovelUrl?.('template');
     setIsDropdownOpen?.(false);
   };
 
@@ -108,6 +113,13 @@ const ImportMenu: React.FC<ImportMenuProps> = ({
           label={_('From Web Novel')}
           Icon={<MdMenuBook className='h-5 w-5' />}
           onClick={handleImportFromNovelUrl}
+        />
+      )}
+      {onImportBookFromNovelUrl && (
+        <MenuItem
+          label={_('From URL Template')}
+          Icon={<MdLooksOne className='h-5 w-5' />}
+          onClick={handleImportFromUrlTemplate}
         />
       )}
       <MenuItem

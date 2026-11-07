@@ -50,6 +50,25 @@ describe('ImportMenuPopup', () => {
     expect(screen.queryByRole('menuitem', { name: 'From Web Browser' })).toBeNull();
   });
 
+  it('offers a separate "From URL Template" entry next to "From Web Novel"', () => {
+    const onImportBookFromNovelUrl = vi.fn();
+    const { onClose } = renderPopup({ onImportBookFromNovelUrl });
+
+    expect(screen.getByRole('menuitem', { name: 'From Web Novel' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('menuitem', { name: 'From Web Novel' }));
+    expect(onImportBookFromNovelUrl).toHaveBeenLastCalledWith('toc');
+
+    fireEvent.click(screen.getByRole('menuitem', { name: 'From URL Template' }));
+    expect(onImportBookFromNovelUrl).toHaveBeenLastCalledWith('template');
+    expect(onClose).toHaveBeenCalled();
+  });
+
+  it('shows neither web-novel entry when importing from a URL is not available', () => {
+    renderPopup();
+    expect(screen.queryByRole('menuitem', { name: 'From Web Novel' })).toBeNull();
+    expect(screen.queryByRole('menuitem', { name: 'From URL Template' })).toBeNull();
+  });
+
   it('adds the platform-dependent options when their callbacks are available', () => {
     const onImportBooksFromDirectory = vi.fn();
     const onImportFromWebBrowser = vi.fn();

@@ -275,6 +275,7 @@ const LibraryPageContent = ({ searchParams }: { searchParams: ReadonlyURLSearchP
   const [showAddFeed, setShowAddFeed] = useState(false);
   const [showWebSources, setShowWebSources] = useState(false);
   const [showImportNovel, setShowImportNovel] = useState(false);
+  const [novelDialogMode, setNovelDialogMode] = useState<'toc' | 'template'>('toc');
   const [updateNovelBook, setUpdateNovelBook] = useState<Book | null>(null);
   const [showImportPastedText, setShowImportPastedText] = useState(false);
   const [importMenuAnchor, setImportMenuAnchor] = useState<HTMLElement | null>(null);
@@ -2025,7 +2026,12 @@ const LibraryPageContent = ({ searchParams }: { searchParams: ReadonlyURLSearchP
           }
           onImportFromWebBrowser={isTauriAppPlatform() ? () => setShowWebSources(true) : undefined}
           onImportBookFromNovelUrl={
-            isTauriAppPlatform() ? () => setShowImportNovel(true) : undefined
+            isTauriAppPlatform()
+              ? (mode) => {
+                  setNovelDialogMode(mode ?? 'toc');
+                  setShowImportNovel(true);
+                }
+              : undefined
           }
           onOpenCatalogManager={handleShowOPDSDialog}
           onOpenFeeds={handleShowFeeds}
@@ -2189,7 +2195,12 @@ const LibraryPageContent = ({ searchParams }: { searchParams: ReadonlyURLSearchP
           }
           onImportFromWebBrowser={isTauriAppPlatform() ? () => setShowWebSources(true) : undefined}
           onImportBookFromNovelUrl={
-            isTauriAppPlatform() ? () => setShowImportNovel(true) : undefined
+            isTauriAppPlatform()
+              ? (mode) => {
+                  setNovelDialogMode(mode ?? 'toc');
+                  setShowImportNovel(true);
+                }
+              : undefined
           }
           onOpenCatalogManager={handleShowOPDSDialog}
           onOpenFeeds={handleShowFeeds}
@@ -2301,6 +2312,7 @@ const LibraryPageContent = ({ searchParams }: { searchParams: ReadonlyURLSearchP
       />
       <ImportNovelDialog
         isOpen={showImportNovel}
+        mode={novelDialogMode}
         onClose={() => setShowImportNovel(false)}
         onImport={handleImportNovelFile}
       />

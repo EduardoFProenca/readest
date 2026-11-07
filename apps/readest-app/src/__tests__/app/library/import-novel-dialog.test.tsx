@@ -397,3 +397,65 @@ it('closing the sign-in browser without capturing does not fetch chapters', asyn
   );
   expect(fetchNovelTocMock).not.toHaveBeenCalled();
 });
+
+describe('ImportNovelDialog in URL template mode', () => {
+  const template = 'https://novel.example.com/naruto/c.!@!';
+  const setupTemplate = () => {
+    const onClose = vi.fn();
+    const onImport = vi.fn(async () => {});
+    render(<ImportNovelDialog isOpen mode='template' onClose={onClose} onImport={onImport} />);
+    return { onClose, onImport };
+  };
+  const field = () => screen.getByLabelText('URL template');
+
+  it('is titled for the template and explains the marker with an example', () => {
+    setupTemplate();
+    expect(screen.getByRole('dialog', { name: 'Import from URL Template' })).toBeTruthy();
+    expect(
+      screen.getByText(/Write !@! where the chapter number goes/, { exact: false }),
+    ).toBeTruthy();
+    expect(screen.getByText('https://novel.example.com/naruto/c.!@!')).toBeTruthy();
+  });
+
+  it('shows the chapter range fields from the start, without typing the marker first', () => {
+    setupTemplate();
+    expect(screen.getByLabelText('First chapter')).toBeTruthy();
+    expect(screen.getByLabelText('Last chapter')).toBeTruthy();
+    expect(screen.queryByText('Sign in with Browser')).toBeNull();
+  });
+
+  it('previews the first and last address as the user types', () => {
+    setupTemplate();
+    fireEvent.change(field(), { target: { value: template } });
+    fireEvent.change(screen.getByLabelText('First chapter'), { target: { value: '1' } });
+    fireEvent.change(screen.getByLabelText('Last chapter'), { target: { value: '10' } });
+    expect(screen.getByText('https://novel.example.com/naruto/c.1')).toBeTruthy();
+    expect(screen.getByText('https://novel.example.com/naruto/c.10')).toBeTruthy();
+    expect(screen.getByText('10 chapters')).toBeTruthy();
+  });
+
+  it('asks for the marker when the address does not contain it', () => {
+    setupTemplate();
+    fireEvent.change(field(), { target: { value: 'https://novel.example.com/naruto' } });
+    fireEvent.change(screen.getByLabelText('Last chapter'), { target: { value: '10' } });
+    expect(screen.getByText('Add !@! to the address where the chapter number goes.')).toBeTruthy();
+    expect((screen.getByText('Fetch Chapters') as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it('shows why a range is invalid instead of a preview', () => {
+    setupTemplate();
+    fireEvent.change(field(), { target: { value: template } });
+    fireEvent.change(screen.getByLabelText('First chapter'), { target: { value: '9' } });
+    fireEvent.change(screen.getByLabelText('Last chapter'), { target: { value: '2' } });
+    expect(screen.queryByText('https://novel.example.com/naruto/c.9')).toBeNull();
+  });
+
+  it('continues to the same chapter preview as a template typed in the web-novel dialog', async () => {
+    setupTemplate();
+    fireEvent.change(field(), { target: { value: template } });
+    fireEvent.change(screen.getByLabelText('Last chapter'), { target: { value: '3' } });
+    fireEvent.click(screen.getByText('Fetch Chapters'));
+    expect(await screen.findByText('Import')).toBeTruthy();
+    expect(fetchNovelTocMock).not.toHaveBeenCalled();
+  });
+});

@@ -31,7 +31,7 @@ interface LibraryHeaderProps {
   onImportPastedText?: () => void;
   onImportBooksFromDirectory?: () => void;
   onImportFromWebBrowser?: () => void;
-  onImportBookFromNovelUrl?: () => void;
+  onImportBookFromNovelUrl?: (mode?: 'toc' | 'template') => void;
   onOpenCatalogManager: () => void;
   onOpenFeeds: () => void;
   onToggleSelectMode: () => void;
