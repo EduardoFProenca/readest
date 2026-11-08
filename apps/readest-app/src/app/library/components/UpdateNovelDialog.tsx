@@ -17,7 +17,7 @@ interface UpdateNovelDialogProps {
   book: Book | null;
   onClose: () => void;
   /** Hand the updated `.epub` to the normal library import, which keeps the book's progress and notes. */
-  onApply: (file: File) => Promise<void>;
+  onApply: (file: File, expected: { book: Book; chapterCount: number }) => Promise<void>;
 }
 
 type State =
@@ -85,6 +85,7 @@ const UpdateNovelDialog: React.FC<UpdateNovelDialogProps> = ({ book, onClose, on
           try {
             await onApply(
               new File([result.blob], `${target.title}.epub`, { type: 'application/epub+zip' }),
+              { book: target, chapterCount: result.chapterCount },
             );
           } catch {
             if (!controller.signal.aborted) {

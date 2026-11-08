@@ -124,6 +124,7 @@ import ImportFromFolderDialog, {
 } from './components/ImportFromFolderDialog';
 import WebSourcesDialog from './components/WebSourcesDialog';
 import ImportNovelDialog from './components/ImportNovelDialog';
+import { readNovelEpub } from '@/services/novel/novelEpub';
 import UpdateNovelDialog from './components/UpdateNovelDialog';
 import ImportPastedTextDialog from './components/ImportPastedTextDialog';
 import NowPlayingBar from './components/NowPlayingBar';
@@ -1428,9 +1429,29 @@ const LibraryPageContent = ({ searchParams }: { searchParams: ReadonlyURLSearchP
 
   // The updated EPUB keeps the book's identifier, so the normal import re-keys the
   // existing row and carries its reading progress, notes and group over.
-  const handleApplyNovelUpdate = async (file: File) => {
+  const handleApplyNovelUpdate = async (
+    file: File,
+    expected: { book: Book; chapterCount: number },
+  ) => {
     const { importedCount } = await importBooks([{ file }], undefined, { silent: true });
     if (importedCount === 0) throw new Error('The updated novel could not be imported');
+    // Never report success on the import's word alone: read the stored copy back.
+    const { library } = useLibraryStore.getState();
+    const live = library.filter(
+      (b) => !b.deletedAt && b.format === expected.book.format && b.title === expected.book.title,
+    );
+    const row = live.find((b) => b.hash === expected.book.hash) ?? live[0];
+    const stored = row ? (await appService!.loadBookContent(row)).file : null;
+    const { chapters } = stored ? await readNovelEpub(stored) : { chapters: [] };
+    if (live.length !== 1 || chapters.length !== expected.chapterCount) {
+      console.error('[novel-update] stored book does not match the update', {
+        liveRowsWithTitle: live.length,
+        rowHash: row?.hash,
+        storedChapters: chapters.length,
+        expectedChapters: expected.chapterCount,
+      });
+      throw new Error('The updated novel was not stored correctly');
+    }
   };
 
   useEffect(() => {
