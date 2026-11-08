@@ -22,6 +22,8 @@ export interface NovelUpdateOptions
   /** Progress of the new chapters being downloaded. `total` is 0 when it is not known
    *  in advance (template books are probed until a chapter does not exist). */
   onProgress?: (done: number, total: number) => void;
+  /** The chapter that just started downloading, for "Downloading: <title>". */
+  onChapterStart?: (chapter: NovelChapterLink) => void;
   /** Most chapters to add to a template book in one update. */
   maxNewChapters?: number;
 }
@@ -40,7 +42,13 @@ export type NovelUpdateResult =
   /** The source no longer lines up with the stored chapters; nothing was changed. */
   | { outcome: 'source_mismatch' }
   /** New chapters exist but none could be downloaded; nothing was changed. */
-  | { outcome: 'nothing_added'; failed: NovelChapterLink[]; deferred: NovelChapterLink[] }
+  | {
+      outcome: 'nothing_added';
+      failed: NovelChapterLink[];
+      deferred: NovelChapterLink[];
+      /** Why each chapter in `failed` failed, in the same order. */
+      failureKinds: ChapterFailureKind[];
+    }
   | ({
       outcome: 'updated';
       /** The updated EPUB. The input is never modified. */
@@ -112,7 +120,7 @@ async function updateFromTemplate(
 
   if (links.length === 0) {
     return failed.length > 0
-      ? { outcome: 'nothing_added', failed, deferred: [] }
+      ? { outcome: 'nothing_added', failed, deferred: [], failureKinds: ['error'] }
       : { outcome: 'up_to_date', totalFound: source.chapters.length };
   }
   const appended = await appendChaptersToNovelEpub(book, {
@@ -171,10 +179,16 @@ export async function updateNovel(
     renderChapters: source.renderChapters,
     translate: options.translate,
     onProgress: options.onProgress,
+    onChapterStart: options.onChapterStart,
     signal,
   });
   if (downloaded.chapters.length === 0) {
-    return { outcome: 'nothing_added', failed: downloaded.failed, deferred: downloaded.deferred };
+    return {
+      outcome: 'nothing_added',
+      failed: downloaded.failed,
+      deferred: downloaded.deferred,
+      failureKinds: downloaded.failureKinds,
+    };
   }
 
   try {

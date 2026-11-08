@@ -53,6 +53,9 @@ export interface NovelBook extends ConvertedBook {
 
 export interface NovelDownloadOptions {
   onProgress?: (done: number, total: number) => void;
+  /** A chapter started downloading (up to a few run at once). Separate from `onProgress`,
+   *  which still fires exactly once per finished chapter. */
+  onChapterStart?: (chapter: NovelChapterLink) => void;
   signal?: AbortSignal;
   /** Stable input for the EPUB identifier. Defaults to the chapter-list URL;
    *  selected volumes supply their chapter URLs so each volume stays distinct. */
@@ -445,6 +448,7 @@ async function fetchChapterBodies(
       const index = cursor++;
       if (index >= total) return;
       const link = chapters[index]!;
+      options.onChapterStart?.(link);
       let html: string | null = null;
       let kind: ChapterFailureKind = 'unreadable';
       try {

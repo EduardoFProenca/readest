@@ -107,6 +107,7 @@ describe('UpdateNovelDialog', () => {
       (_file: Blob, options: NovelUpdateOptions) =>
         new Promise((_resolve, reject) => {
           options.onStage?.('downloading');
+          options.onChapterStart?.({ title: 'Chapter 7: Part 7', url: 'https://n/7' });
           options.onProgress?.(1, 4);
           options.signal?.addEventListener('abort', () =>
             reject(new DOMException('cancelled', 'AbortError')),
@@ -114,7 +115,14 @@ describe('UpdateNovelDialog', () => {
         }),
     );
     const { onApply, onClose } = setup();
-    expect(await screen.findByText('1 / 4')).toBeTruthy();
+    expect(await screen.findByText('Updating: My Novel')).toBeTruthy();
+    expect(screen.getByText('Chapter 2 of 4')).toBeTruthy();
+    expect(screen.getByText('1 downloaded, 3 left')).toBeTruthy();
+    expect(screen.getByText('25%')).toBeTruthy();
+    expect(screen.getByText('Downloading: Chapter 7: Part 7')).toBeTruthy();
+    expect((screen.getByLabelText('Downloading new chapters…') as HTMLProgressElement).value).toBe(
+      1,
+    );
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
     await waitFor(() => expect(onClose).toHaveBeenCalled());
     expect(onApply).not.toHaveBeenCalled();
@@ -132,6 +140,7 @@ describe('UpdateNovelDialog', () => {
     expect(await screen.findByText('8 chapters downloaded so far')).toBeTruthy();
     expect(screen.queryByText(/%/)).toBeNull();
     expect(screen.queryByRole('progressbar')).toBeNull();
+    expect(screen.queryByText(/Chapter \d+ of/)).toBeNull();
   });
 
   it('tells the user when the per-update limit was reached so they can update again', async () => {
@@ -177,11 +186,17 @@ describe('UpdateNovelDialog', () => {
       outcome: 'nothing_added',
       failed: [link(6)],
       deferred: [link(7)],
+      failureKinds: ['unreadable'],
     });
     const { onApply } = setup();
     expect(
       await screen.findByText(
         'None of the 2 new chapters could be downloaded. The book was not changed.',
+      ),
+    ).toBeTruthy();
+    expect(
+      screen.getByText(
+        'The chapter page has no readable text. It may not be published yet, or need a sign-in.',
       ),
     ).toBeTruthy();
     expect(onApply).not.toHaveBeenCalled();

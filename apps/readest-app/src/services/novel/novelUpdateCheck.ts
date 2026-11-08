@@ -11,6 +11,9 @@ export type NovelCheckResult =
    *  (template books are probed one chapter ahead, not listed). */
   | { outcome: 'available'; newCount: number | null }
   | { outcome: 'up_to_date' }
+  /** The source lists a new chapter, but its page cannot be read yet (not published, empty,
+   *  or behind a sign-in): nothing the update could add, so no indicator. */
+  | { outcome: 'not_ready'; newCount: number }
   /** The source no longer lines up with the stored chapters: nothing can be appended safely. */
   | { outcome: 'source_mismatch' }
   /** Not a web novel, or no usable source record: never queried. */
@@ -66,5 +69,18 @@ export async function checkNovelForUpdates(
   if (plan.status === 'source_mismatch') return { outcome: 'source_mismatch' };
   if (plan.status === 'up_to_date' || plan.newChapters.length === 0)
     return { outcome: 'up_to_date' };
-  return { outcome: 'available', newCount: plan.newChapters.length };
+
+  // A chapter in the list is not yet a chapter the update can add. Read the first new one
+  // the way the update would; the book is not touched and nothing is kept.
+  const probe = await downloadNewChapters(plan.newChapters.slice(0, 1), {
+    fetchPage: options.fetchPage,
+    renderPage: options.renderPage,
+    renderChapters: source.renderChapters,
+    signal: options.signal,
+  });
+  if (probe.chapters.length > 0) return { outcome: 'available', newCount: plan.newChapters.length };
+  if (probe.failureKinds[0] === 'error') {
+    throw new Error('Could not reach the source to check for new chapters.');
+  }
+  return { outcome: 'not_ready', newCount: plan.newChapters.length };
 }

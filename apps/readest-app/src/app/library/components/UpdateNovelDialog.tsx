@@ -6,9 +6,10 @@ import Dialog from '@/components/Dialog';
 import { useEnv } from '@/context/EnvContext';
 import { useTranslation } from '@/hooks/useTranslation';
 import { isNovelImportCancelled } from '@/services/novel/novelImport';
+import type { ChapterFailureKind } from '@/services/novel/novelImport';
 import { updateNovel } from '@/services/novel/novelUpdate';
 import type { NovelUpdateResult, NovelUpdateStage } from '@/services/novel/novelUpdate';
-import { novelUpdateKey, useNovelUpdateStore } from '@/store/novelUpdateStore';
+import { newLockOwner, novelUpdateKey, useNovelUpdateStore } from '@/store/novelUpdateStore';
 import type { Book } from '@/types/book';
 
 interface UpdateNovelDialogProps {
@@ -20,7 +21,14 @@ interface UpdateNovelDialogProps {
 }
 
 type State =
-  | { phase: 'working'; stage: NovelUpdateStage; done: number; total: number }
+  | {
+      phase: 'working';
+      stage: NovelUpdateStage;
+      done: number;
+      total: number;
+      /** Title of the chapter being downloaded. */
+      current?: string;
+    }
   | { phase: 'result'; result: NovelUpdateResult }
   | { phase: 'error'; message: string };
 
@@ -67,6 +75,10 @@ const UpdateNovelDialog: React.FC<UpdateNovelDialogProps> = ({ book, onClose, on
                 ? { ...current, stage: 'downloading', done, total }
                 : current,
             ),
+          onChapterStart: (chapter) =>
+            setState((current) =>
+              current.phase === 'working' ? { ...current, current: chapter.title } : current,
+            ),
         });
         if (controller.signal.aborted) return;
         if (result.outcome === 'updated') {
@@ -111,36 +123,27 @@ const UpdateNovelDialog: React.FC<UpdateNovelDialogProps> = ({ book, onClose, on
     [appService, onApply],
   );
 
-  // A book being checked or updated elsewhere is not queried a second time.
-  const run = useCallback(
-    async (target: Book, controller: AbortController) => {
-      const key = novelUpdateKey(target);
-      if (!useNovelUpdateStore.getState().acquire(key)) {
-        setState({
-          phase: 'error',
-          message: _('This novel is already being checked or updated. Try again in a moment.'),
-        });
-        return;
-      }
-      try {
-        await runUpdate(target, controller);
-      } finally {
-        useNovelUpdateStore.getState().release(key);
-      }
-    },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [runUpdate],
-  );
-
   useEffect(() => {
     if (!book) return;
+    const store = useNovelUpdateStore.getState();
+    const key = novelUpdateKey(book);
+    const owner = newLockOwner('update');
+    // A book being checked or updated elsewhere is not queried a second time. Only a lock
+    // this dialog acquired is ever released by it, so it can't free another operation's.
+    if (!store.acquire(key, owner)) {
+      setState({
+        phase: 'error',
+        message: _('This novel is already being checked or updated. Try again in a moment.'),
+      });
+      return;
+    }
     const controller = new AbortController();
     abortRef.current = controller;
-    void run(book, controller);
+    void runUpdate(book, controller).finally(() => store.release(key, owner));
     return () => {
       controller.abort();
       // Frees the book even if the running update never settles after the abort.
-      useNovelUpdateStore.getState().release(novelUpdateKey(book));
+      store.release(key, owner);
     };
     // `attempt` re-runs the update after "Try again".
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -152,6 +155,15 @@ const UpdateNovelDialog: React.FC<UpdateNovelDialogProps> = ({ book, onClose, on
   };
 
   if (!book) return null;
+
+  const failureReason = (kind: ChapterFailureKind | undefined): string =>
+    kind === 'missing'
+      ? _('The chapter is listed but the source says it does not exist (yet).')
+      : kind === 'unreadable'
+        ? _(
+            'The chapter page has no readable text. It may not be published yet, or need a sign-in.',
+          )
+        : _('The source could not be reached or refused the request. Try again later.');
 
   const message = (result: NovelUpdateResult): string[] => {
     switch (result.outcome) {
@@ -166,6 +178,7 @@ const UpdateNovelDialog: React.FC<UpdateNovelDialogProps> = ({ book, onClose, on
           _('None of the {{count}} new chapters could be downloaded. The book was not changed.', {
             count: result.failed.length + result.deferred.length,
           }),
+          failureReason(result.failureKinds[0]),
         ];
       case 'unsupported':
         return [
@@ -222,28 +235,45 @@ const UpdateNovelDialog: React.FC<UpdateNovelDialogProps> = ({ book, onClose, on
               <p className='text-base-content/70 text-sm'>{_('Checking for new chapters…')}</p>
             ) : (
               <>
-                <p className='text-base-content/70 text-sm'>{_('Downloading new chapters…')}</p>
+                <p className='text-sm font-medium'>
+                  {_('Updating: {{title}}', { title: book.title })}
+                </p>
                 {state.total > 0 ? (
                   <>
-                    <div className='flex justify-between gap-4 text-sm tabular-nums'>
-                      <span className='text-base-content/70'>
-                        {state.done} / {state.total}
-                      </span>
-                      <span className='font-medium'>
-                        {Math.round((state.done / state.total) * 100)}%
-                      </span>
-                    </div>
+                    <p className='text-sm tabular-nums' data-testid='novel-update-chapter-count'>
+                      {_('Chapter {{current}} of {{total}}', {
+                        current: Math.min(state.done + 1, state.total),
+                        total: state.total,
+                      })}
+                    </p>
                     <progress
                       aria-label={_('Downloading new chapters…')}
                       className='progress eink-bordered block h-2 w-full'
                       value={state.done}
                       max={state.total}
                     />
+                    <div className='flex justify-between gap-4 text-sm tabular-nums'>
+                      <span className='text-base-content/70'>
+                        {_('{{done}} downloaded, {{left}} left', {
+                          done: state.done,
+                          left: state.total - state.done,
+                        })}
+                      </span>
+                      <span className='font-medium'>
+                        {Math.round((state.done / state.total) * 100)}%
+                      </span>
+                    </div>
                   </>
                 ) : (
-                  // URL-template books are probed until a chapter does not exist: no total yet.
+                  // URL-template books are probed until a chapter does not exist: no total yet,
+                  // so no bar and no percentage.
                   <p className='text-sm tabular-nums'>
                     {_('{{count}} chapters downloaded so far', { count: state.done })}
+                  </p>
+                )}
+                {state.current && (
+                  <p className='text-base-content/70 break-words text-sm'>
+                    {_('Downloading: {{title}}', { title: state.current })}
                   </p>
                 )}
               </>

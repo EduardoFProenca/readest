@@ -211,7 +211,12 @@ describe('UpdateNovelDialog and the indicator', () => {
   });
 
   it('keeps the indicator when nothing could be added', async () => {
-    await run({ outcome: 'nothing_added', failed: [], deferred: [] } as NovelUpdateResult);
+    await run({
+      outcome: 'nothing_added',
+      failed: [],
+      deferred: [],
+      failureKinds: [],
+    } as NovelUpdateResult);
     expect(useNovelUpdateStore.getState().updates['meta-a']).toBeDefined();
   });
 
@@ -242,7 +247,7 @@ describe('UpdateNovelDialog and the indicator', () => {
   });
 
   it('does not start a second update for a book that is already being checked', async () => {
-    useNovelUpdateStore.getState().acquire('meta-a');
+    useNovelUpdateStore.getState().acquire('meta-a', 'check-1');
     render(<UpdateNovelDialog book={novel('a')} onClose={vi.fn()} onApply={vi.fn()} />);
     await act(async () => {});
     expect(updateNovelMock).not.toHaveBeenCalled();
@@ -252,5 +257,54 @@ describe('UpdateNovelDialog and the indicator', () => {
   it('releases the book when the update ends, so it can be checked again', async () => {
     await run(updated());
     expect(useNovelUpdateStore.getState().busy).toEqual({});
+  });
+
+  it('does not release a lock it never acquired (another check keeps its lock)', async () => {
+    useNovelUpdateStore.getState().acquire('meta-a', 'check-9');
+    const { unmount } = render(
+      <UpdateNovelDialog book={novel('a')} onClose={vi.fn()} onApply={vi.fn()} />,
+    );
+    await act(async () => {});
+    unmount();
+    expect(useNovelUpdateStore.getState().busy['meta-a']).toBe('check-9');
+  });
+
+  it('updates two different novels in the same session', async () => {
+    updateNovelMock.mockResolvedValue(updated());
+    useNovelUpdateStore.getState().markAvailable('meta-b', 1);
+    const onApply = vi.fn(async () => {});
+    const { rerender } = render(
+      <UpdateNovelDialog book={novel('a')} onClose={vi.fn()} onApply={onApply} />,
+    );
+    await waitFor(() => expect(onApply).toHaveBeenCalledTimes(1));
+    rerender(<UpdateNovelDialog book={null} onClose={vi.fn()} onApply={onApply} />);
+    rerender(<UpdateNovelDialog book={novel('b')} onClose={vi.fn()} onApply={onApply} />);
+    await waitFor(() => expect(onApply).toHaveBeenCalledTimes(2));
+    expect(updateNovelMock).toHaveBeenCalledTimes(2);
+    expect(useNovelUpdateStore.getState().updates).toEqual({});
+    expect(useNovelUpdateStore.getState().busy).toEqual({});
+  });
+
+  it('after a failed update of one novel, the next novel still updates and the first keeps its dot', async () => {
+    updateNovelMock
+      .mockResolvedValueOnce({
+        outcome: 'nothing_added',
+        failed: [],
+        deferred: [],
+        failureKinds: ['error'],
+      })
+      .mockResolvedValueOnce(updated());
+    useNovelUpdateStore.getState().markAvailable('meta-b', 1);
+    const onApply = vi.fn(async () => {});
+    const { rerender } = render(
+      <UpdateNovelDialog book={novel('a')} onClose={vi.fn()} onApply={onApply} />,
+    );
+    await act(async () => {});
+    expect(useNovelUpdateStore.getState().busy).toEqual({});
+    rerender(<UpdateNovelDialog book={null} onClose={vi.fn()} onApply={onApply} />);
+    rerender(<UpdateNovelDialog book={novel('b')} onClose={vi.fn()} onApply={onApply} />);
+    await waitFor(() => expect(onApply).toHaveBeenCalledTimes(1));
+    expect(useNovelUpdateStore.getState().updates['meta-a']).toBeDefined();
+    expect(useNovelUpdateStore.getState().updates['meta-b']).toBeUndefined();
   });
 });

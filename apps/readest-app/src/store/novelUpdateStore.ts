@@ -12,6 +12,10 @@ const STORAGE_KEY = 'readest-novel-updates';
 export const novelUpdateKey = (book: Pick<Book, 'hash' | 'metaHash'>): string =>
   book.metaHash || book.hash;
 
+let lockCounter = 0;
+/** A fresh identity for one check or update, used to own a book's lock. */
+export const newLockOwner = (prefix: string): string => `${prefix}-${++lockCounter}`;
+
 export interface NovelUpdateEntry {
   /** New chapters at the source; null when not known (URL-template books are probed). */
   newCount: number | null;
@@ -32,16 +36,18 @@ interface NovelUpdateState {
   checking: boolean;
   progress: { done: number; total: number };
   lastCheck: NovelCheckSummary | null;
-  /** Keys being checked or updated right now: a book is never queried twice at once. */
-  busy: Record<string, true>;
+  /** Keys being checked or updated right now, with the operation that holds each lock:
+   *  a book is never queried twice at once, and only the holder can release its lock. */
+  busy: Record<string, string>;
 
   markAvailable: (key: string, newCount: number | null) => void;
   clear: (key: string) => void;
   /** Drop entries for books that are no longer in the library. */
   prune: (keepKeys: Set<string>) => void;
   /** Returns false when the key is already busy. */
-  acquire: (key: string) => boolean;
-  release: (key: string) => void;
+  acquire: (key: string, owner: string) => boolean;
+  /** Releases the lock only if `owner` still holds it; a no-op otherwise. */
+  release: (key: string, owner: string) => void;
   startCheck: (total: number) => boolean;
   setProgress: (done: number) => void;
   finishCheck: (summary: NovelCheckSummary) => void;
@@ -103,12 +109,13 @@ export const useNovelUpdateStore = create<NovelUpdateState>((set, get) => ({
     persist(updates);
     set({ updates });
   },
-  acquire: (key) => {
+  acquire: (key, owner) => {
     if (get().busy[key]) return false;
-    set({ busy: { ...get().busy, [key]: true } });
+    set({ busy: { ...get().busy, [key]: owner } });
     return true;
   },
-  release: (key) => {
+  release: (key, owner) => {
+    if (get().busy[key] !== owner) return;
     const { [key]: _released, ...busy } = get().busy;
     set({ busy });
   },

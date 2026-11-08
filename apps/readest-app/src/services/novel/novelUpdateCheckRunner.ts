@@ -1,5 +1,5 @@
 import type { Book } from '@/types/book';
-import { novelUpdateKey, useNovelUpdateStore } from '@/store/novelUpdateStore';
+import { newLockOwner, novelUpdateKey, useNovelUpdateStore } from '@/store/novelUpdateStore';
 import type { NovelCheckSummary } from '@/store/novelUpdateStore';
 import { isNovelImportCancelled } from './novelImport';
 import { isWebNovelMetadata } from './novelSource';
@@ -29,7 +29,9 @@ export async function runNovelUpdateCheck(
   const store = useNovelUpdateStore.getState();
   const books = eligibleNovels(library);
   if (!store.startCheck(books.length)) return null;
-  store.prune(new Set(library.filter((b) => !b.deletedAt).map(novelUpdateKey)));
+  // Only books that are still web novels keep an indicator.
+  store.prune(new Set(books.map(novelUpdateKey)));
+  const owner = newLockOwner('check');
 
   const check = deps.check ?? checkNovelForUpdates;
   const summary: NovelCheckSummary = {
@@ -47,9 +49,14 @@ export async function runNovelUpdateCheck(
       }
       const key = novelUpdateKey(book);
       // Being updated or already checked right now: skip, never query twice at once.
-      if (!useNovelUpdateStore.getState().acquire(key)) continue;
+      if (!useNovelUpdateStore.getState().acquire(key, owner)) continue;
       try {
         const result = await check(await deps.loadFile(book), { signal: deps.signal });
+        // Cancelled while the last query was in flight: that is not a finished check.
+        if (deps.signal?.aborted) {
+          summary.cancelled = true;
+          break;
+        }
         const s = useNovelUpdateStore.getState();
         if (result.outcome === 'available') {
           s.markAvailable(key, result.newCount);
@@ -66,7 +73,7 @@ export async function runNovelUpdateCheck(
         }
         summary.failed++;
       } finally {
-        useNovelUpdateStore.getState().release(key);
+        useNovelUpdateStore.getState().release(key, owner);
         useNovelUpdateStore.getState().setProgress(index + 1);
       }
     }

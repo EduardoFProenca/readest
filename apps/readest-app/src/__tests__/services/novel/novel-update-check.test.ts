@@ -109,7 +109,29 @@ describe('checkNovelForUpdates', () => {
       fetchPage: tocSite(links(1, 8), { calls }),
     });
     expect(result).toEqual({ outcome: 'available', newCount: 3 });
-    expect(calls).toEqual([TOC_URL]);
+    // The list, then only the first new chapter, to prove it can be read. Not the other two.
+    expect(calls).toEqual([TOC_URL, link(6).url]);
+  });
+
+  it('does not report a chapter that is listed but cannot be read yet', async () => {
+    const site = async (url: string) =>
+      url === TOC_URL
+        ? { html: tocPage(links(1, 6)), finalUrl: url }
+        : { html: '<html><body><p>Coming soon</p></body></html>', finalUrl: url };
+    expect(await checkNovelForUpdates(await makeTocNovel(5), { fetchPage: site })).toEqual({
+      outcome: 'not_ready',
+      newCount: 1,
+    });
+  });
+
+  it('a network error while reading the new chapter is a failed check, not "not ready"', async () => {
+    const site = async (url: string) => {
+      if (url === TOC_URL) return { html: tocPage(links(1, 6)), finalUrl: url };
+      throw new ConversionError('temporarily unavailable', 'fetch_transient');
+    };
+    await expect(
+      checkNovelForUpdates(await makeTocNovel(5), { fetchPage: site }),
+    ).rejects.toThrow();
   });
 
   it('reports up to date when the source has nothing new', async () => {
@@ -252,28 +274,80 @@ describe('runNovelUpdateCheck', () => {
 
   it('does not query a book that is being updated right now', async () => {
     const a = await bookOf('a', null);
-    useNovelUpdateStore.getState().acquire(novelUpdateKey(a));
+    useNovelUpdateStore.getState().acquire(novelUpdateKey(a), 'someone-else');
     const check = vi.fn();
     await runNovelUpdateCheck([a], { loadFile: async () => new Blob(['x']), check });
     expect(check).not.toHaveBeenCalled();
   });
 
-  it('can be cancelled: stops querying and keeps what was already found', async () => {
+  it('cancelled during the only query in flight: nothing is recorded', async () => {
     const [a, b, c] = await Promise.all([bookOf('a', null), bookOf('b', null), bookOf('c', null)]);
     const controller = new AbortController();
     const check = vi.fn(async () => {
       controller.abort();
       return { outcome: 'available', newCount: 1 } as const;
     });
+    // The only query in flight is cancelled: its answer is not recorded as a finished check.
     const summary = await runNovelUpdateCheck([a, b, c], {
       loadFile: async () => new Blob(['x']),
       check,
       signal: controller.signal,
     });
     expect(check).toHaveBeenCalledTimes(1);
-    expect(summary).toMatchObject({ cancelled: true, withUpdates: 1 });
-    expect(Object.keys(useNovelUpdateStore.getState().updates)).toEqual([novelUpdateKey(a)]);
+    expect(summary).toMatchObject({ cancelled: true, withUpdates: 0, checked: 0 });
+    expect(useNovelUpdateStore.getState().updates).toEqual({});
     expect(useNovelUpdateStore.getState().busy).toEqual({});
+  });
+
+  it('keeps what was found before the cancel', async () => {
+    const [a, b, c] = await Promise.all([bookOf('a', null), bookOf('b', null), bookOf('c', null)]);
+    const controller = new AbortController();
+    let calls = 0;
+    const summary = await runNovelUpdateCheck([a, b, c], {
+      loadFile: async () => new Blob(['x']),
+      signal: controller.signal,
+      check: async () => {
+        if (++calls === 2) controller.abort();
+        return { outcome: 'available', newCount: 1 };
+      },
+    });
+    expect(summary).toMatchObject({ cancelled: true, withUpdates: 1, checked: 1 });
+    expect(Object.keys(useNovelUpdateStore.getState().updates)).toEqual([novelUpdateKey(a)]);
+  });
+
+  it('a cancel while the file is loading is not recorded either', async () => {
+    const a = await bookOf('a', null);
+    const controller = new AbortController();
+    const summary = await runNovelUpdateCheck([a], {
+      loadFile: async () => {
+        controller.abort();
+        return new Blob(['x']);
+      },
+      signal: controller.signal,
+      check: async () => ({ outcome: 'available', newCount: 1 }),
+    });
+    expect(summary).toMatchObject({ cancelled: true, withUpdates: 0 });
+    expect(useNovelUpdateStore.getState().updates).toEqual({});
+  });
+
+  it('clears the indicator of a listed chapter that cannot be read yet', async () => {
+    const a = await bookOf('a', null);
+    useNovelUpdateStore.getState().markAvailable(novelUpdateKey(a), 1);
+    await runNovelUpdateCheck([a], {
+      loadFile: async () => new Blob(['x']),
+      check: async () => ({ outcome: 'not_ready', newCount: 1 }),
+    });
+    expect(useNovelUpdateStore.getState().updates).toEqual({});
+  });
+
+  it('drops indicators of books that are no longer web novels', async () => {
+    const was = await bookOf('was', null, false);
+    useNovelUpdateStore.getState().markAvailable(novelUpdateKey(was), 2);
+    await runNovelUpdateCheck([was, await bookOf('a', null)], {
+      loadFile: async () => new Blob(['x']),
+      check: async () => ({ outcome: 'up_to_date' }),
+    });
+    expect(useNovelUpdateStore.getState().updates[novelUpdateKey(was)]).toBeUndefined();
   });
 
   it('drops indicators for books that left the library', async () => {
@@ -320,5 +394,130 @@ describe('check, then update: end to end', () => {
     expect(await checkNovelForUpdates(result.blob, { fetchPage: site })).toEqual({
       outcome: 'up_to_date',
     });
+  });
+});
+
+describe('updating, in the EPUB', () => {
+  const spineTitles = async (blob: Blob) =>
+    (await readNovelEpub(blob)).chapters.map((c) => c.title);
+
+  it('appends new chapters after the last one, in source order, with the same structure', async () => {
+    const original = await makeTocNovel(5);
+    const result = await updateNovel(original, { fetchPage: tocSite(links(1, 8)) });
+    if (result.outcome !== 'updated') throw new Error(result.outcome);
+    const book = await readNovelEpub(result.blob);
+    expect(await spineTitles(result.blob)).toEqual(links(1, 8).map((l) => l.title));
+    // Same shape as the stored chapters: a canonical <h1> heading, then paragraphs.
+    for (const chapter of book.chapters.slice(5)) {
+      expect(chapter.html.startsWith(`<h1>${chapter.title}</h1>`)).toBe(true);
+      expect(chapter.html).toContain('<p>');
+    }
+    // Old chapters are not touched.
+    const before = await readNovelEpub(original);
+    expect(book.chapters.slice(0, 5)).toEqual(before.chapters);
+    // The source record lists the new chapters last.
+    expect(book.source!.chapters.map((c) => c.url)).toEqual(links(1, 8).map((l) => l.url));
+  });
+
+  it('keeps the new chapter last even when the site lists newest chapters first', async () => {
+    const original = await makeTocNovel(5);
+    const result = await updateNovel(original, {
+      fetchPage: tocSite(links(1, 6).reverse()),
+    });
+    if (result.outcome !== 'updated') throw new Error(result.outcome);
+    expect(await spineTitles(result.blob)).toEqual(links(1, 6).map((l) => l.title));
+  });
+
+  it('does not duplicate chapters when updating twice', async () => {
+    const site = tocSite(links(1, 7));
+    const first = await updateNovel(await makeTocNovel(5), { fetchPage: site });
+    if (first.outcome !== 'updated') throw new Error(first.outcome);
+    expect(await updateNovel(first.blob, { fetchPage: site })).toMatchObject({
+      outcome: 'up_to_date',
+    });
+    expect(await spineTitles(first.blob)).toHaveLength(7);
+  });
+
+  it('updates two different novels one after the other, each from its own source', async () => {
+    const otherToc = `${BASE}/novel/9/`;
+    const otherLinks = (n: number) =>
+      Array.from({ length: n }, (_, i) => ({
+        title: `Chapter ${i + 1}: Other ${i + 1}`,
+        url: `${BASE}/novel/9/${i + 1}`,
+      }));
+    const otherBook = await buildEpub(
+      otherLinks(5).map(stored),
+      {
+        ...META,
+        title: 'Other Novel',
+        identifier: 'readest:other',
+        source: novelSourceMarker(otherToc),
+      },
+      [],
+      undefined,
+      [
+        {
+          path: NOVEL_SOURCE_FILENAME,
+          content: serializeNovelSource({
+            version: 1,
+            kind: 'toc',
+            sourceUrl: otherToc,
+            chapters: otherLinks(5),
+          }),
+        },
+      ],
+    );
+    const site = async (url: string) =>
+      url === otherToc
+        ? { html: tocPage(otherLinks(6)), finalUrl: url }
+        : tocSite(links(1, 6))(url);
+    const a = await updateNovel(await makeTocNovel(5), { fetchPage: site });
+    const b = await updateNovel(otherBook, { fetchPage: site });
+    if (a.outcome !== 'updated' || b.outcome !== 'updated') throw new Error('not updated');
+    expect(await spineTitles(a.blob)).toHaveLength(6);
+    expect(await spineTitles(b.blob)).toEqual(
+      [1, 2, 3, 4, 5, 6].map((n) => `Chapter ${n}: Other ${n}`),
+    );
+    expect((await readNovelEpub(b.blob)).metadata.title).toBe('Other Novel');
+  });
+
+  it('a chapter that fails to download leaves the book unchanged and says why', async () => {
+    const site = async (url: string) => {
+      if (url === TOC_URL) return { html: tocPage(links(1, 6)), finalUrl: url };
+      throw new ConversionError('Could not fetch the page (HTTP 404).', 'fetch_failed', 404);
+    };
+    const result = await updateNovel(await makeTocNovel(5), { fetchPage: site });
+    expect(result).toMatchObject({ outcome: 'nothing_added', failureKinds: ['missing'] });
+  });
+
+  it('a title that changed at the source is reported, not applied, and loses nothing', async () => {
+    const original = await makeTocNovel(5);
+    const renamed = links(1, 6).map((l) => (l.url.endsWith('/2') ? { ...l, title: 'Renamed' } : l));
+    const result = await updateNovel(original, { fetchPage: tocSite(renamed) });
+    if (result.outcome !== 'updated') throw new Error(result.outcome);
+    expect(result.retitled).toEqual([
+      { url: link(2).url, storedTitle: link(2).title, freshTitle: 'Renamed' },
+    ]);
+    const book = await readNovelEpub(result.blob);
+    expect(book.chapters[1]).toEqual(stored(link(2)));
+    expect(book.source!.chapters[1]!.title).toBe(link(2).title);
+  });
+
+  it('reports which chapter is downloading, with the running count', async () => {
+    const started: string[] = [];
+    const progress: [number, number][] = [];
+    const result = await updateNovel(await makeTocNovel(5), {
+      fetchPage: tocSite(links(1, 8)),
+      onChapterStart: (chapter) => started.push(chapter.title),
+      onProgress: (done, total) => progress.push([done, total]),
+    });
+    expect(result.outcome).toBe('updated');
+    expect(started).toEqual([link(6).title, link(7).title, link(8).title]);
+    // Exactly one progress call per finished chapter, as before.
+    expect(progress).toEqual([
+      [1, 3],
+      [2, 3],
+      [3, 3],
+    ]);
   });
 });

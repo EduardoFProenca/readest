@@ -52,13 +52,22 @@ describe('novelUpdateStore', () => {
     expect(Object.keys(useNovelUpdateStore.getState().updates)).toEqual(['ok']);
   });
 
-  it('acquire is exclusive per key until released', () => {
+  it('acquire is exclusive per key until released by its owner', () => {
     const s = useNovelUpdateStore.getState();
-    expect(s.acquire('a')).toBe(true);
-    expect(useNovelUpdateStore.getState().acquire('a')).toBe(false);
-    expect(useNovelUpdateStore.getState().acquire('b')).toBe(true);
-    useNovelUpdateStore.getState().release('a');
-    expect(useNovelUpdateStore.getState().acquire('a')).toBe(true);
+    expect(s.acquire('a', 'o1')).toBe(true);
+    expect(useNovelUpdateStore.getState().acquire('a', 'o2')).toBe(false);
+    expect(useNovelUpdateStore.getState().acquire('b', 'o2')).toBe(true);
+    useNovelUpdateStore.getState().release('a', 'o1');
+    expect(useNovelUpdateStore.getState().acquire('a', 'o2')).toBe(true);
+  });
+
+  it('only the owner can release a lock', () => {
+    useNovelUpdateStore.getState().acquire('a', 'check-1');
+    useNovelUpdateStore.getState().release('a', 'update-2'); // a different operation
+    expect(useNovelUpdateStore.getState().busy['a']).toBe('check-1');
+    useNovelUpdateStore.getState().release('a', 'check-1');
+    expect(useNovelUpdateStore.getState().busy).toEqual({});
+    useNovelUpdateStore.getState().release('a', 'check-1'); // repeating is harmless
   });
 
   it('only one check can run at a time', () => {
