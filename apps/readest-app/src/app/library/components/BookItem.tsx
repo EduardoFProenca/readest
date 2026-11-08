@@ -26,6 +26,7 @@ import { INDETERMINATE_PROGRESS } from '@/utils/transfer';
 import { getBookTags } from '../utils/libraryUtils';
 import ReadingProgress from './ReadingProgress';
 import BookCover from '@/components/BookCover';
+import NovelUpdateDot from './NovelUpdateDot';
 
 interface BookItemProps {
   book: Book;
@@ -149,6 +150,7 @@ const BookItem: React.FC<BookItemProps> = ({
         )}
         style={bookitemMainStyle}
       >
+        <NovelUpdateDot book={book} />
         <BookCover
           mode={mode}
           book={book}

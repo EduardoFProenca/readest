@@ -53,6 +53,7 @@ vi.mock('@/app/library/components/SettingsMenu', () => ({ default: () => null })
 vi.mock('@/app/library/components/ImportMenu', () => ({ default: () => null }));
 vi.mock('@/app/library/components/LibrarySearchOptionsMenu', () => ({ default: () => null }));
 vi.mock('@/app/library/components/ViewMenu', () => ({ default: () => null }));
+vi.mock('@/app/library/components/NovelUpdateCheckButton', () => ({ default: () => null }));
 
 const renderHeader = (isSelectMode: boolean) =>
   render(

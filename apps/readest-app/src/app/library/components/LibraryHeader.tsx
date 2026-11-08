@@ -22,6 +22,7 @@ import SettingsMenu from './SettingsMenu';
 import ImportMenu from './ImportMenu';
 import LibrarySearchOptionsMenu from './LibrarySearchOptionsMenu';
 import ViewMenu from './ViewMenu';
+import NovelUpdateCheckButton from './NovelUpdateCheckButton';
 
 interface LibraryHeaderProps {
   isSelectMode: boolean;
@@ -269,6 +270,7 @@ const LibraryHeader: React.FC<LibraryHeaderProps> = ({
           </div>
         ) : (
           <div className='flex h-full items-center gap-x-2 sm:gap-x-4'>
+            <NovelUpdateCheckButton />
             <Dropdown
               label={_('View Menu')}
               className='exclude-title-bar-mousedown dropdown-bottom dropdown-end'

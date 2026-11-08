@@ -8,6 +8,7 @@ import { useTranslation } from '@/hooks/useTranslation';
 import { isNovelImportCancelled } from '@/services/novel/novelImport';
 import { updateNovel } from '@/services/novel/novelUpdate';
 import type { NovelUpdateResult, NovelUpdateStage } from '@/services/novel/novelUpdate';
+import { novelUpdateKey, useNovelUpdateStore } from '@/store/novelUpdateStore';
 import type { Book } from '@/types/book';
 
 interface UpdateNovelDialogProps {
@@ -42,7 +43,7 @@ const UpdateNovelDialog: React.FC<UpdateNovelDialogProps> = ({ book, onClose, on
   const [attempt, setAttempt] = useState(0);
   const abortRef = useRef<AbortController | null>(null);
 
-  const run = useCallback(
+  const runUpdate = useCallback(
     async (target: Book, controller: AbortController) => {
       setState(working('checking'));
       let source: File;
@@ -83,6 +84,16 @@ const UpdateNovelDialog: React.FC<UpdateNovelDialogProps> = ({ book, onClose, on
             return;
           }
         }
+        // The library dot follows the real outcome. A failed or cancelled update never reaches here.
+        const dot = useNovelUpdateStore.getState();
+        const key = novelUpdateKey(target);
+        if (result.outcome === 'updated') {
+          const left = result.failed.length + result.deferred.length;
+          if (left > 0 || result.limitReached) dot.markAvailable(key, left || null);
+          else dot.clear(key);
+        } else if (result.outcome !== 'nothing_added') {
+          dot.clear(key);
+        }
         if (!controller.signal.aborted) setState({ phase: 'result', result });
       } catch (e) {
         if (isNovelImportCancelled(e) || controller.signal.aborted) return;
@@ -100,12 +111,37 @@ const UpdateNovelDialog: React.FC<UpdateNovelDialogProps> = ({ book, onClose, on
     [appService, onApply],
   );
 
+  // A book being checked or updated elsewhere is not queried a second time.
+  const run = useCallback(
+    async (target: Book, controller: AbortController) => {
+      const key = novelUpdateKey(target);
+      if (!useNovelUpdateStore.getState().acquire(key)) {
+        setState({
+          phase: 'error',
+          message: _('This novel is already being checked or updated. Try again in a moment.'),
+        });
+        return;
+      }
+      try {
+        await runUpdate(target, controller);
+      } finally {
+        useNovelUpdateStore.getState().release(key);
+      }
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [runUpdate],
+  );
+
   useEffect(() => {
     if (!book) return;
     const controller = new AbortController();
     abortRef.current = controller;
     void run(book, controller);
-    return () => controller.abort();
+    return () => {
+      controller.abort();
+      // Frees the book even if the running update never settles after the abort.
+      useNovelUpdateStore.getState().release(novelUpdateKey(book));
+    };
     // `attempt` re-runs the update after "Try again".
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [book, attempt]);
