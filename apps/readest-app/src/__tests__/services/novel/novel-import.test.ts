@@ -200,7 +200,9 @@ describe('downloadNovel', () => {
         seen.push(done);
       },
     });
-    expect(seen).toHaveLength(6);
+    // The first call is the up-front (0, total); then one per finished chapter.
+    expect(seen).toHaveLength(7);
+    expect(seen[0]).toBe(0);
     expect(seen[seen.length - 1]).toBe(6);
     expect([...seen].sort((a, b) => a - b)).toEqual(seen);
   });

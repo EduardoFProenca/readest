@@ -41,10 +41,18 @@ const READING_STATUS_LABELS: Record<ReadingStatus, string> = {
   abandoned: _('On hold'),
 };
 
+/** A web novel Readest built, with its EPUB on this device: the only book "Update Novel" applies to. */
+export const canUpdateNovel = (book: Book): boolean =>
+  book.format === 'EPUB' &&
+  !!book.downloadedAt &&
+  !isFeedBook(book) &&
+  isWebNovelMetadata(book.metadata);
+
 /**
  * Safely cast a query parameter to LibrarySortByType with fallback.
  * Returns the value if valid, otherwise returns the fallback.
  */
+
 export const ensureLibrarySortByType = (
   value: string | null | undefined,
   fallback: LibrarySortByType,
@@ -1184,13 +1192,7 @@ export const getBookContextMenuItemIds = (
   ids.push('showDetails', 'showInFinder', 'searchGoodreads');
   // Updating needs the EPUB on this device. Only books Readest built from a web
   // novel carry the marker (in their synced metadata), so other EPUBs never see this.
-  if (
-    opts?.novelUpdate &&
-    book.format === 'EPUB' &&
-    book.downloadedAt &&
-    !isFeedBook(book) &&
-    isWebNovelMetadata(book.metadata)
-  ) {
+  if (opts?.novelUpdate && canUpdateNovel(book)) {
     ids.push('updateNovel');
   }
   // A feed book has no file to move: every transfer action would fail, and the

@@ -513,8 +513,9 @@ describe('updating, in the EPUB', () => {
     });
     expect(result.outcome).toBe('updated');
     expect(started).toEqual([link(6).title, link(7).title, link(8).title]);
-    // Exactly one progress call per finished chapter, as before.
+    // One call up front with the total (so the bar shows at once), then one per finished chapter.
     expect(progress).toEqual([
+      [0, 3],
       [1, 3],
       [2, 3],
       [3, 3],

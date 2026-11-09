@@ -519,6 +519,9 @@ async function fetchChapterBodies(
       await new Promise((resolve) => setTimeout(resolve, 0));
     }
   };
+  // Report the total before the first (possibly slow, rendered) chapter finishes, so the
+  // progress bar shows up immediately instead of after chapter one.
+  onProgress?.(0, total);
   await Promise.all(Array.from({ length: Math.min(CHAPTER_CONCURRENCY, total) }, worker));
   return { results, failureKinds, images, failures };
 }

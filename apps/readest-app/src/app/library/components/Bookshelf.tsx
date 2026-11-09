@@ -22,6 +22,7 @@ import { useBookshelfDate } from '@/hooks/useBookshelfDate';
 import { useResponsiveSize } from '@/hooks/useResponsiveSize';
 import { navigateToLibrary, navigateToReader, showReaderWindow } from '@/utils/nav';
 import {
+  canUpdateNovel,
   createBookFilter,
   createBookSorter,
   ensureLibraryGroupByType,
@@ -469,6 +470,19 @@ const Bookshelf: React.FC<BookshelfProps> = ({
       setTimeout(() => setLoading(true), 200);
       navigateToReader(router, readerIds);
     }
+  };
+
+  // The one selected book, when it is a web novel that can be updated.
+  const selectedNovel = (() => {
+    const hashes = getSelectedBooks();
+    const book = hashes.length === 1 ? libraryBooks.find((b) => b.hash === hashes[0]) : undefined;
+    return book && canUpdateNovel(book) ? book : undefined;
+  })();
+
+  const updateSelectedNovel = () => {
+    if (!selectedNovel) return;
+    handleSetSelectMode(false);
+    eventDispatcher.dispatch('update-novel', { book: selectedNovel });
   };
 
   const openBookDetails = () => {
@@ -1100,6 +1114,8 @@ const Bookshelf: React.FC<BookshelfProps> = ({
           onGroup={groupSelectedBooks}
           onTag={tagSelectedBooks}
           onDetails={openBookDetails}
+          onUpdateNovel={updateSelectedNovel}
+          canUpdateNovel={!!selectedNovel}
           onStatus={showStatusSelection}
           onDownload={downloadSelectedBooks}
           onSend={sendSelectedBook}

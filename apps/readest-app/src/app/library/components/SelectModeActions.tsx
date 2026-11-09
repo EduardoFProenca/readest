@@ -10,6 +10,7 @@ import {
   MdWifiTethering,
   MdLabelOutline,
   MdOutlineArchive,
+  MdOutlineSystemUpdateAlt,
 } from 'react-icons/md';
 import { IoShareSocialOutline } from 'react-icons/io5';
 import { LuFolderPlus } from 'react-icons/lu';
@@ -47,6 +48,9 @@ interface SelectModeActionsProps {
   sendNearbyEnabled?: boolean;
   onSendNearby?: () => void;
   onPack?: () => void;
+  // Shown only when the handler is given; enabled for one selected web novel.
+  onUpdateNovel?: () => void;
+  canUpdateNovel?: boolean;
   onDelete: () => void;
   onCancel: () => void;
   // Reports the popup's rendered height (including its safe-area padding) so the
@@ -70,6 +74,8 @@ const SelectModeActions: React.FC<SelectModeActionsProps> = ({
   sendNearbyEnabled = false,
   onSendNearby,
   onPack,
+  onUpdateNovel,
+  canUpdateNovel = false,
   onDelete,
   onCancel,
   onHeightChange,
@@ -177,6 +183,18 @@ const SelectModeActions: React.FC<SelectModeActionsProps> = ({
           <MdOutlineCloudDownload />
           <div>{_('Download')}</div>
         </button>
+        {onUpdateNovel && (
+          <button
+            onClick={onUpdateNovel}
+            className={clsx(
+              'flex flex-col items-center justify-center gap-1',
+              !canUpdateNovel && 'btn-disabled opacity-50',
+            )}
+          >
+            <MdOutlineSystemUpdateAlt />
+            <div>{_('Update Novel')}</div>
+          </button>
+        )}
         {sendEnabled && (
           <button
             onClick={onSend}
